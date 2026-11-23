@@ -2,7 +2,7 @@ import { SoundEngine } from "./audio.js";
 import { CURSE_ALERTS, TITLE_WHISPERS } from "./lore.js";
 import {
   createLevel, hasLineOfSight, resolveCircleWallCollision, TILE_SIZE, Pathing, roomAt,
-  MIRROR_TIERS, MIRROR_ORDER
+  MIRROR_TIERS, MIRROR_ORDER, openSecret, isPassableTile
 } from "./map.js";
 import { Renderer3D } from "./render3d.js";
 import { AI_STATE, CountessAI } from "./enemy.js";
@@ -27,6 +27,8 @@ const hudOilVal = $("hud-oil-val");
 const hudWeaponName = $("hud-weapon-name");
 const hudAmmo = $("hud-ammo");
 const hudMirrors = $("hud-mirrors");
+const hudCoinVal = $("hud-coin-val");
+const hudCoinsEl = $("hud-coins");
 const promptBanner = $("prompt-banner");
 const dangerVignette = $("danger-vignette");
 const sanityGlitch = $("sanity-glitch");
@@ -36,6 +38,9 @@ const freezeTime = $("freeze-time");
 const freezeFill = $("freeze-fill");
 const toastEl = $("toast");
 const areaTitleEl = $("area-title");
+const boonBanner = $("boon-banner");
+const boonTitle = $("boon-title");
+const boonSub = $("boon-sub");
 const minimap = $("minimap");
 const mm = minimap.getContext("2d");
 
@@ -78,6 +83,8 @@ let countess = null;
 let player = null;
 let monsters = [];
 let projectiles = [];
+let drops = [];
+let nextDropId = 1;
 let fx = [];
 let shake = 0;
 let hurtFx = 0;
@@ -87,7 +94,9 @@ let nearbyContext = null;
 let deathEcho = loadDeathEcho();
 let curseTimerId = null;
 let selectedWeapon = loadWeapon();
-let spawnTimer = 9;
+let spawnTimer = 4;
+let wellTimer = 32;
+let boonTimer = 0;
 let kills = 0;
 let mirrorsUsed = 0;
 let lastRoomKey = null;
@@ -223,14 +232,16 @@ function startNewRun() {
     pagesFound: 0, flareCooldown: 0, inBrazier: false,
     weapon: selectedWeapon, ammo: w.kind === "ranged" ? w.ammo : Infinity,
     attackCd: 0, attackAnim: 0, hurtAnim: 0, invuln: 0,
-    mirrors: { cracked: 0, silver: 0, gilded: 0, obsidian: 0 }
+    mirrors: { cracked: 0, silver: 0, gilded: 0, obsidian: 0 },
+    coins: 0, speedBoost: 0, darkCurse: 0
   };
   countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour, pathing);
   monsters = [];
   projectiles = [];
+  drops = [];
   fx = [];
   shake = 0; hurtFx = 0; elapsed = 0; flareFlash = 0; kills = 0; mirrorsUsed = 0;
-  spawnTimer = 9; nearbyContext = null; lastRoomKey = null; freezeTier = null;
+  spawnTimer = 4; wellTimer = 32; boonTimer = 0; nearbyContext = null; lastRoomKey = null; freezeTier = null;
   warnedCountessImmune = false;
   buildMinimapBase();
 
@@ -247,6 +258,7 @@ function hideAllScreens() {
   for (const s of [screenTitle, screenWeapon, screenHelp, screenLore, screenDeath, screenWin]) s.classList.add("hidden");
   freezeBanner.classList.add("hidden");
   toastEl.classList.add("hidden");
+  if (boonBanner) boonBanner.classList.add("hidden");
 }
 
 function showTitle() {
@@ -370,6 +382,10 @@ function triggerInteract() {
     updateHud();
   } else if (nearbyContext.type === "exit") {
     if (player.pagesFound >= 5) handleWin();
+  } else if (nearbyContext.type === "well") {
+    tossWell();
+  } else if (nearbyContext.type === "secret") {
+    triggerSecret(nearbyContext.obj);
   }
 }
 
@@ -454,16 +470,118 @@ function tryAttack() {
   }
 }
 
-function onMonsterKilled(m) {
+function onMonsterKilled(m, forcedKind = null, opts = {}) {
   kills += 1;
   sound.playMonsterDie();
   fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : 0x9fb28a });
-  // Small chance a servant drops something useful
-  if (Math.random() < 0.18) {
-    player.sanity = Math.min(100, player.sanity + 8);
-    player.health = Math.min(100, player.health + 6);
-    fx.push({ type: "heal", x: player.x, y: player.y });
+  const kind = forcedKind || rollDropKind(m);
+  if (kind && kind !== "nothing") {
+    const extra = { ...opts };
+    if (kind === "mirror" && !extra.tier) extra.tier = rollMirrorTier(m.kind === "ghoul" || m.kind === "dweller");
+    if (kind === "coins" && !extra.amount) extra.amount = m.kind === "dweller" ? 16 + Math.floor(Math.random() * 10) : m.kind === "ghoul" ? 12 + Math.floor(Math.random() * 9) : 6 + Math.floor(Math.random() * 8);
+    if (kind === "sanity" && !extra.amount) extra.amount = 24;
+    spawnDrop(kind, m.x, m.y, extra);
   }
+}
+
+const DROP_TABLE = {
+  default: { nothing: 0.40, sanity: 0.25, coins: 0.23, mirror: 0.12 },
+  ghoul:   { nothing: 0.30, sanity: 0.26, coins: 0.26, mirror: 0.18 },
+  dweller: { nothing: 0.20, sanity: 0.25, coins: 0.30, mirror: 0.25 }
+};
+
+function rollDropKind(m) {
+  const table = (m && DROP_TABLE[m.kind]) ? DROP_TABLE[m.kind] : DROP_TABLE.default;
+  const r = Math.random();
+  let acc = 0;
+  for (const k of ["nothing", "sanity", "coins", "mirror"]) {
+    acc += table[k];
+    if (r < acc) return k;
+  }
+  return "nothing";
+}
+
+function rollMirrorTier(lucky = false) {
+  const r = Math.random();
+  if (lucky) {
+    if (r < 0.60) return "cracked";
+    if (r < 0.86) return "silver";
+    if (r < 0.97) return "gilded";
+    return "obsidian";
+  }
+  if (r < 0.70) return "cracked";
+  if (r < 0.92) return "silver";
+  if (r < 0.99) return "gilded";
+  return "obsidian";
+}
+
+function spawnDrop(kind, x, y, opts = {}) {
+  if (!kind || kind === "nothing") return null;
+  const ang = Math.random() * Math.PI * 2;
+  const spd = 55 + Math.random() * 45;
+  const d = {
+    id: nextDropId++,
+    kind,
+    tier: opts.tier || (kind === "mirror" ? "cracked" : null),
+    amount: opts.amount || (kind === "coins" ? 8 : kind === "sanity" ? 24 : 0),
+    x, y,
+    vx: Math.cos(ang) * spd,
+    vy: Math.sin(ang) * spd,
+    h: 0.95,
+    vh: 4.4 + Math.random() * 1.1,
+    life: 20,
+    collected: false,
+    remove: false
+  };
+  drops.push(d);
+  return d;
+}
+
+function collectDrop(d) {
+  if (!d || d.collected || d.remove) return;
+  d.collected = true;
+  d.remove = true;
+  sound.playPickup();
+  if (d.kind === "sanity") {
+    player.sanity = Math.min(100, player.sanity + d.amount);
+    fx.push({ type: "heal", x: player.x, y: player.y });
+    toast(`Sanity vial — +${d.amount} sanity`, 2.2);
+  } else if (d.kind === "coins") {
+    player.coins += d.amount;
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: 0xe7c873 });
+    toast(`Coin pouch — +${d.amount} coins`, 2.2);
+    if (hudCoinsEl) { hudCoinsEl.classList.remove("bump"); void hudCoinsEl.offsetWidth; hudCoinsEl.classList.add("bump"); }
+  } else if (d.kind === "mirror") {
+    const tier = d.tier || "cracked";
+    player.mirrors[tier] += 1;
+    const T = MIRROR_TIERS[tier];
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: T.color });
+    toast(`${T.name} dropped (${T.secs}s freeze)`, 2.6);
+    renderMirrorHud(false, tier);
+  }
+}
+
+function updateDrops(dt) {
+  for (const d of drops) {
+    if (d.collected || d.remove) continue;
+    d.life -= dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    const damp = Math.exp(-dt * 3.2);
+    d.vx *= damp;
+    d.vy *= damp;
+    resolveCircleWallCollision(level, d, 8, false);
+    d.vh -= 16 * dt;
+    d.h += d.vh * dt;
+    if (d.h < 0.16) {
+      d.h = 0.16;
+      if (d.vh < 0) d.vh *= -0.48;
+      if (Math.abs(d.vh) < 0.7) d.vh = 0;
+    }
+    if (d.life <= 0) { d.remove = true; continue; }
+    if (!player.hidden && Math.hypot(d.x - player.x, d.y - player.y) < 30) collectDrop(d);
+  }
+  drops = drops.filter((d) => !d.remove);
 }
 
 function bestMirror() {
@@ -612,6 +730,7 @@ function handleDeath(reason) {
   $("death-time").textContent = formatTime(elapsed);
   $("death-kills").textContent = String(kills);
   $("death-mirrors").textContent = String(mirrorsUsed);
+  const deathCoins = $("death-coins"); if (deathCoins) deathCoins.textContent = String(player.coins);
   screenDeath.classList.remove("hidden");
 }
 
@@ -625,6 +744,7 @@ function handleWin() {
   $("win-sanity").textContent = `${Math.max(1, Math.round(player.sanity))}%`;
   $("win-kills").textContent = String(kills);
   $("win-weapon").textContent = WEAPONS[player.weapon].name;
+  const winCoins = $("win-coins"); if (winCoins) winCoins.textContent = String(player.coins);
   screenWin.classList.remove("hidden");
 }
 
@@ -670,6 +790,7 @@ function renderMirrorHud(rebuild = false, bumpTier = null) {
 function updateHud() {
   if (!player || !countess) return;
   hudPages.textContent = `${player.pagesFound} / 5`;
+  if (hudCoinVal) hudCoinVal.textContent = String(player.coins | 0);
   const hp = Math.max(0, Math.min(100, player.health));
   const sanityPct = Math.max(0, Math.min(100, player.sanity));
   const oilPct = Math.max(0, Math.min(100, player.oil));
@@ -686,6 +807,8 @@ function updateHud() {
 
   hudStatus.className = "hud-pill status-pill";
   if (player.hidden) { hudStatus.textContent = "HIDDEN"; hudStatus.classList.add("hidden-state"); }
+  else if (player.darkCurse > 0) { hudStatus.textContent = "CURSED"; hudStatus.classList.add("hunted"); }
+  else if (player.speedBoost > 0) { hudStatus.textContent = "SWIFT"; hudStatus.classList.add("unseen"); }
   else if (countess.frozen) { hudStatus.textContent = "FROZEN"; hudStatus.classList.add("unseen"); }
   else if (countess.state === AI_STATE.HUNT) { hudStatus.textContent = "HUNTED"; hudStatus.classList.add("hunted"); }
   else if (countess.state === AI_STATE.INVESTIGATE || countess.state === AI_STATE.SEARCH) { hudStatus.textContent = "SEEKING"; hudStatus.classList.add("investigate"); }
@@ -703,6 +826,8 @@ function updateHud() {
     btnInteract.classList.add("ready-glow");
     if (nearbyContext.type === "page") interactLabel.textContent = "READ";
     else if (nearbyContext.type === "alcove") interactLabel.textContent = "HIDE";
+    else if (nearbyContext.type === "well") interactLabel.textContent = "TOSS";
+    else if (nearbyContext.type === "secret") interactLabel.textContent = "SEARCH";
     else if (nearbyContext.type === "exit") interactLabel.textContent = player.pagesFound >= 5 ? "ESCAPE" : "SEALED";
   } else { interactLabel.textContent = "SEARCH"; btnInteract.classList.remove("ready-glow"); }
 
@@ -765,6 +890,17 @@ function drawMinimap() {
     mm.fillStyle = countess.frozen ? "#bfe0ff" : "#ff2040";
     mm.fillRect(Math.floor(countess.x / TILE_SIZE) - 0.5, Math.floor(countess.y / TILE_SIZE) - 0.5, 2, 2);
   }
+  // opened secret passages
+  mm.fillStyle = "#c9e4a0";
+  for (const d of level.secrets) {
+    if (!d.opened) continue;
+    for (const [tx, ty] of d.tiles) mm.fillRect(tx, ty, 1, 1);
+  }
+  // well
+  if (level.well) {
+    mm.fillStyle = "#6a88aa";
+    mm.fillRect(level.well.tx, level.well.ty, 1, 1);
+  }
   // player
   mm.fillStyle = "#ffffff";
   mm.fillRect(Math.floor(player.x / TILE_SIZE) - 0.5, Math.floor(player.y / TILE_SIZE) - 0.5, 2, 2);
@@ -773,12 +909,12 @@ function drawMinimap() {
 // ---------------------------------------------------------------- spawning
 function pickMonsterType() {
   const r = Math.random();
-  if (elapsed < 45) return "ghoul";
-  if (elapsed < 110) return r < 0.55 ? "ghoul" : r < 0.85 ? "maiden" : "bats";
+  if (elapsed < 20) return "ghoul";
+  if (elapsed < 70) return r < 0.55 ? "ghoul" : r < 0.85 ? "maiden" : "bats";
   return r < 0.4 ? "ghoul" : r < 0.72 ? "maiden" : "bats";
 }
 
-function spawnMonster(type = pickMonsterType(), at = null) {
+function spawnMonster(type = pickMonsterType(), at = null, quiet = false) {
   let sp = at;
   if (!sp) {
     const far = level.spawns.filter((s) => {
@@ -795,21 +931,116 @@ function spawnMonster(type = pickMonsterType(), at = null) {
   const d = Math.hypot(sp.x - player.x, sp.y - player.y);
   if (d < TILE_SIZE * 20) sound.playSpawn();
   const room = roomAt(level, Math.floor(sp.x / TILE_SIZE), Math.floor(sp.y / TILE_SIZE));
-  toast(`${MONSTER_TYPES[type].name} rises${room ? ` in the ${room.name}` : ""}…`, 2.2);
+  if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} rises${room ? ` in the ${room.name}` : ""}…`, 2.2);
   return m;
+}
+
+
+function wellExitPoint() {
+  const w = level.well;
+  for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const tx = w.tx + dx, ty = w.ty + dy;
+    if (isPassableTile(level, tx, ty, player && player.pagesFound >= 5)) {
+      return { x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE };
+    }
+  }
+  return { x: w.x, y: w.y + TILE_SIZE };
+}
+
+function spawnWellDweller(quiet = false) {
+  const w = level.well;
+  const exit = wellExitPoint();
+  const m = new Monster("dweller", exit.x, exit.y);
+  m.state = "RISE";
+  m.timer = 1.8;
+  m.fromWell = true;
+  m.emergeFrom = { x: w.x, y: w.y };
+  monsters.push(m);
+  fx.push({ type: "mist", x: w.x, y: w.y });
+  fx.push({ type: "mist", x: exit.x, y: exit.y });
+  sound.playWellSpawn();
+  if (!quiet) toast("A Well Dweller crawls from the black water…", 3);
+  shake = Math.max(shake, 0.4);
+  return m;
+}
+
+function showBoon(kind, title, sub, secs = 3.4) {
+  if (!boonBanner) return;
+  boonBanner.className = "boon-banner " + kind;
+  boonTitle.textContent = title;
+  boonSub.textContent = sub;
+  boonBanner.classList.remove("hidden");
+  boonTimer = secs;
+}
+
+function tossWell(forced = null) {
+  if (mode !== "PLAYING" || !player) return false;
+  sound.init();
+  if (player.coins < 5) {
+    toast("The well wants an offering of 5 coins.");
+    return false;
+  }
+  player.coins -= 5;
+  if (hudCoinVal) hudCoinVal.textContent = String(player.coins);
+  sound.playWellToss();
+  fx.push({ type: "pickup", x: level.well.x, y: level.well.y, color: 0xe7c873 });
+  fx.push({ type: "mist", x: level.well.x, y: level.well.y });
+  let roll = forced || ["speed", "dark", "dweller"][Math.floor(Math.random() * 3)];
+  const dwellers = monsters.filter((m) => !m.dead && m.kind === "dweller").length;
+  if (roll === "dweller" && dwellers >= 2) roll = Math.random() < 0.5 ? "speed" : "dark";
+  if (roll === "speed") {
+    player.speedBoost = 15;
+    player.darkCurse = 0;
+    sound.playBoon();
+    showBoon("boost", "SPEED BOOST", "The offering is accepted — your steps lighten for 15s.");
+  } else if (roll === "dark") {
+    player.darkCurse = 15;
+    player.speedBoost = 0;
+    sound.playCurse();
+    showBoon("curse", "DARKNESS CURSE", "The well drinks the light. Your lantern shrinks for 15s.");
+  } else {
+    spawnWellDweller();
+    showBoon("dweller", "WELL DWELLER", "Something answers the splash and crawls out.");
+  }
+  return roll;
+}
+
+function triggerSecret(secret) {
+  if (!secret || secret.opened) return;
+  if (openSecret(level, secret)) {
+    pathing.invalidate();
+    sound.playSecretOpen();
+    shake = Math.max(shake, 0.85);
+    toast(secret.openText, 3.2);
+    fx.push({ type: "spark", x: secret.itemX, y: secret.itemY, n: 14, color: 0xc9a24d });
+    buildMinimapBase();
+  }
+}
+
+function updateWell(dt) {
+  wellTimer -= dt;
+  if (wellTimer > 0) return;
+  const living = monsters.filter((m) => !m.dead && m.kind === "dweller").length;
+  if (living < 1) {
+    spawnWellDweller();
+    wellTimer = 48 + Math.random() * 22;
+  } else {
+    wellTimer = 10;
+  }
 }
 
 function updateSpawner(dt) {
   spawnTimer -= dt;
   if (spawnTimer > 0) return;
-  const alive = monsters.filter((m) => !m.dead).length;
-  const cap = Math.min(8, 3 + Math.floor(elapsed / 60));
+  const alive = monsters.filter((m) => !m.dead && m.kind !== "dweller").length;
+  const cap = Math.min(10, 4 + Math.floor(elapsed / 40));
   if (alive < cap) {
     spawnMonster();
-    // Later in the night they sometimes come in pairs
-    if (elapsed > 150 && Math.random() < 0.35 && alive + 1 < cap) spawnMonster();
+    if (elapsed > 80 && Math.random() < 0.30 && alive + 1 < cap) spawnMonster();
   }
-  spawnTimer = Math.max(14, 32 - elapsed * 0.08) + Math.random() * 8;
+  // ~6–15s early, tightening toward 6s as the night goes on.
+  const span = Math.max(0, 9 - elapsed * 0.04);
+  spawnTimer = 6 + Math.random() * span;
 }
 
 // ---------------------------------------------------------------- damage
@@ -832,7 +1063,8 @@ function damagePlayer(amount, fromX, fromY, reason) {
 const DEATH_BY = {
   ghoul: "The castle's ghouls dragged you down into the straw.",
   maiden: "A Blood Maiden's nails found your throat.",
-  bats: "The bat swarm tore at you until the lantern fell."
+  bats: "The bat swarm tore at you until the lantern fell.",
+  dweller: "The Well Dweller dragged you into the black water."
 };
 
 // ---------------------------------------------------------------- update
@@ -848,6 +1080,9 @@ function update(dt) {
   if (player.attackAnim > 0) player.attackAnim = Math.max(0, player.attackAnim - dt * 3.2);
   if (player.hurtAnim > 0) player.hurtAnim = Math.max(0, player.hurtAnim - dt * 3);
   if (player.invuln > 0) player.invuln -= dt;
+  if (player.speedBoost > 0) player.speedBoost = Math.max(0, player.speedBoost - dt);
+  if (player.darkCurse > 0) player.darkCurse = Math.max(0, player.darkCurse - dt);
+  if (boonTimer > 0) { boonTimer -= dt; if (boonTimer <= 0 && boonBanner) boonBanner.classList.add("hidden"); }
   shake = Math.max(0, shake - dt * 2.4);
   hurtFx = Math.max(0, hurtFx - dt * 2);
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) toastEl.classList.add("hidden"); }
@@ -862,7 +1097,7 @@ function update(dt) {
   if (!player.hidden && mag > 0.14) {
     const clampedMag = Math.min(1, mag);
     const nx = mx / mag, ny = my / mag;
-    const slow = (player.sanity < 25 ? 0.88 : 1) * (player.attackAnim > 0.5 && player.weapon === "mace" ? 0.6 : 1);
+    const slow = (player.sanity < 25 ? 0.88 : 1) * (player.attackAnim > 0.5 && player.weapon === "mace" ? 0.6 : 1) * (player.speedBoost > 0 ? 1.5 : 1);
     player.x += nx * player.speed * clampedMag * slow * dt;
     player.y += ny * player.speed * clampedMag * slow * dt;
     if (player.attackAnim < 0.3) player.angle = Math.atan2(ny, nx);
@@ -947,6 +1182,20 @@ function update(dt) {
       if (Math.hypot(a.x - player.x, a.y - player.y) < 32) {
         nearbyContext = { type: "alcove", obj: a };
         promptText = "Tap HIDE — Iron Alcove";
+        break;
+      }
+    }
+  }
+  if (!nearbyContext && !player.hidden && level.well && Math.hypot(level.well.x - player.x, level.well.y - player.y) < 52) {
+    nearbyContext = { type: "well", obj: level.well };
+    promptText = player.coins >= 5 ? "Tap TOSS — Offer 5 coins to the well" : "The well wants an offering (5 coins)";
+  }
+  if (!nearbyContext && !player.hidden) {
+    for (const d of level.secrets) {
+      if (d.opened) continue;
+      if (Math.hypot(d.itemX - player.x, d.itemY - player.y) < 34) {
+        nearbyContext = { type: "secret", obj: d };
+        promptText = `Tap SEARCH — ${d.itemName}`;
         break;
       }
     }
@@ -1054,7 +1303,20 @@ function update(dt) {
   }
   projectiles = projectiles.filter((p) => !p.dead);
 
+  updateDrops(dt);
   updateSpawner(dt);
+  updateWell(dt);
+
+  // Well Dweller sanity aura
+  for (const m of monsters) {
+    if (m.dead || m.kind !== "dweller" || m.state === "RISE") continue;
+    const d = Math.hypot(m.x - player.x, m.y - player.y);
+    if (d < 200) {
+      const far = Math.max(0, 1 - d / 200);
+      const rate = (d < 80 ? 12 : 7) * far * (player.hidden ? 0.45 : 1);
+      player.sanity = Math.max(0, player.sanity - rate * dt);
+    }
+  }
 
   // Terror & danger
   const distC = Math.hypot(countess.x - player.x, countess.y - player.y);
@@ -1086,9 +1348,11 @@ function draw() {
   renderer3d.render({
     player, countess, mode, flareFlash, deathEcho,
     witching: isWitchingHour,
-    monsters, projectiles, fx,
+    monsters, projectiles, drops, fx,
     shake, hurt: hurtFx,
-    weapon: player ? player.weapon : selectedWeapon
+    weapon: player ? player.weapon : selectedWeapon,
+    speedBoost: player ? player.speedBoost : 0,
+    darkCurse: player ? player.darkCurse : 0
   });
   fx.length = 0;
 }
@@ -1109,20 +1373,44 @@ if (new URLSearchParams(location.search).has("qa")) {
     get countess() { return countess; },
     get level() { return level; },
     get monsters() { return monsters; },
-    get elapsed() { return elapsed; },
     get kills() { return kills; },
     get spawnTimer() { return spawnTimer; },
     set spawnTimer(v) { spawnTimer = v; },
+    get elapsed() { return elapsed; },
+    set elapsed(v) { elapsed = v; },
+    get drops() { return drops; },
     stats: () => renderer3d.stats(),
     place(obj, tx, ty) { obj.x = (tx + 0.5) * TILE_SIZE; obj.y = (ty + 0.5) * TILE_SIZE; },
     spawn(type, tx, ty) {
-      const m = spawnMonster(type, { x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
+      const m = spawnMonster(type || undefined, { x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
       return m && m.id;
     },
+    pickType: () => pickMonsterType(),
     giveMirror(tier, n = 1) { player.mirrors[tier] += n; renderMirrorHud(false, tier); },
     useMirror: () => useMirror(false),
     attack: () => { player.attackCd = 0; tryAttack(); },
-    toast
+    forceDrop(kind, tx, ty, opts = {}) {
+      return spawnDrop(kind, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE, opts);
+    },
+    killForDrop(type, kind, tx, ty, opts = {}) {
+      const m = spawnMonster(type, { x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE }, true);
+      if (!m) return null;
+      m.state = "WANDER";
+      m.timer = 0;
+      m.hp = 0;
+      m._die();
+      onMonsterKilled(m, kind, opts);
+      return { monsterId: m.id, dropId: drops.length ? drops[drops.length - 1].id : null };
+    },
+    toast,
+    giveCoins(n = 5) { player.coins += n; if (hudCoinVal) hudCoinVal.textContent = String(player.coins); },
+    tossWell: (forced) => tossWell(forced),
+    spawnDweller: (quiet = true) => { const m = spawnWellDweller(quiet); return m && m.id; },
+    openSecret: (key) => { const d = level.secrets.find((s) => s.key === key || s.item === key); if (d) triggerSecret(d); return !!(d && d.opened); },
+    get secrets() { return level.secrets; },
+    get well() { return level.well; },
+    get wellTimer() { return wellTimer; },
+    set wellTimer(v) { wellTimer = v; }
   };
 }
 

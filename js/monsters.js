@@ -3,8 +3,10 @@ import { hasLineOfSight, resolveCircleWallCollision } from "./map.js";
 export const MONSTER_TYPES = {
   ghoul: { key: "ghoul", name: "Servant Ghoul", hp: 46, speed: 40, chaseSpeed: 66, dmg: 12, reach: 22, windup: 0.5, cooldown: 1.3, sight: 300, radius: 13, knockResist: 1 },
   maiden: { key: "maiden", name: "Blood Maiden", hp: 28, speed: 60, chaseSpeed: 132, dmg: 9, reach: 18, windup: 0.28, cooldown: 0.95, sight: 340, radius: 11, knockResist: 0.8 },
-  bats: { key: "bats", name: "Bat Swarm", hp: 20, speed: 70, chaseSpeed: 108, dmg: 5, reach: 20, windup: 0.18, cooldown: 0.75, sight: 380, radius: 13, knockResist: 1.4, drainsOil: true }
+  bats: { key: "bats", name: "Bat Swarm", hp: 20, speed: 70, chaseSpeed: 108, dmg: 5, reach: 20, windup: 0.18, cooldown: 0.75, sight: 380, radius: 13, knockResist: 1.4, drainsOil: true },
+  dweller: { key: "dweller", name: "Well Dweller", hp: 80, speed: 22, chaseSpeed: 38, dmg: 16, reach: 24, windup: 0.7, cooldown: 1.6, sight: 280, radius: 13, knockResist: 1.35, aura: 200 }
 };
+
 
 let nextId = 1;
 
@@ -98,6 +100,15 @@ export class Monster {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.hurt > 0) { this.hurt -= dt; return; }
     if (this.repelled > 0) { this.repelled -= dt; return; }
+
+    if (this.kind === "dweller") {
+      this.lurch = (this.lurch || 0) - dt;
+      if (this.lurch <= 0) {
+        this.lurch = 0.18 + Math.random() * 0.85;
+        this.lurchPause = Math.random() < 0.5 ? 0.18 + Math.random() * 0.45 : 0;
+      }
+      if (this.lurchPause > 0) { this.lurchPause -= dt; return; }
+    }
 
     const T = this.type;
     const dx = player.x - this.x;

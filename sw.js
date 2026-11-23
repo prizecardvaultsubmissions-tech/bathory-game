@@ -1,4 +1,4 @@
-const CACHE_NAME = "csejte-blood-ledger-v3-combat";
+const CACHE_NAME = "csejte-blood-ledger-v4-well";
 const ASSETS = [
   "./",
   "./index.html",

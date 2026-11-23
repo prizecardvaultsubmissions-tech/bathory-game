@@ -224,6 +224,46 @@ export function buildMonster(kind, T, psx) {
       rig.limbs.push(hip);
     }
     rig.eyeY = 0.64; rig.eyeZ = 0.72; rig.eyeColor = 0xff2448; rig.barY = 1.15;
+  } else if (kind === "dweller") {
+    // Original Well Dweller: a crawling funerary wraith, long wet hair hiding the face.
+    // Not a likeness of any film character — grey-white shroud, elongated crawl, stone-stained hem.
+    const shroud = M({ color: 0xf2eee6 });
+    const hem = M({ color: 0x9aa094 });
+    const pale = M({ color: 0xe8e6e0 });
+    const hair = M({ color: 0x0a0809 });
+    const wet = M({ color: 0x161218 });
+    body.rotation.x = 0.72;
+    add(body, box(0.48, 0.34, 1.25), shroud, 0, 0.34, 0.08);
+    add(body, box(0.52, 0.18, 0.8), hem, 0, 0.18, -0.5);
+    const head = pivot(body, 0, 0.32, 0.62);
+    add(head, box(0.28, 0.26, 0.28), pale, 0, 0.02, 0.02);
+    // hair curtain completely covers the face
+    add(head, box(0.36, 0.2, 0.36), hair, 0, 0.16, 0.02);
+    for (let i = 0; i < 7; i++) {
+      const sx = -0.16 + i * 0.053;
+      const len = 0.7 + (i % 3) * 0.18;
+      add(head, box(0.055, len, 0.045), i % 2 ? hair : wet, sx, -len * 0.38, 0.14);
+    }
+    // trailing strands
+    for (const sx of [-0.2, 0.2, 0]) {
+      add(head, box(0.05, 0.9, 0.04), hair, sx, -0.35, -0.06);
+    }
+    rig.arms = [];
+    for (const sx of [-0.22, 0.22]) {
+      const sh = pivot(body, sx, 0.3, 0.35);
+      add(sh, box(0.1, 0.12, 0.7), pale, 0, 0, 0.28);
+      add(sh, box(0.14, 0.1, 0.16), pale, 0, -0.02, 0.66);
+      rig.arms.push(sh);
+    }
+    rig.legs = [];
+    for (const sx of [-0.14, 0.14]) {
+      const hip = pivot(body, sx, 0.22, -0.4);
+      add(hip, box(0.12, 0.1, 0.7), shroud, 0, 0, -0.28);
+      rig.legs.push(hip);
+    }
+    rig.torso = body;
+    rig.hideEyes = true;
+    rig.eyeY = 0.55; rig.eyeZ = 0.85; rig.eyeColor = 0xc8e8d8; rig.barY = 0.95;
   } else {
     const fur = M({ color: 0x2a1c24 });
     const wing = M({ color: 0x4a2030, side: THREE.DoubleSide });

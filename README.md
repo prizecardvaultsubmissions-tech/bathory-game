@@ -4,7 +4,7 @@ A mobile-first gothic stealth horror prototype for Prize Card Vault / *House of 
 
 Play the public test build: **https://prizecardvaultsubmissions-tech.github.io/bathory-game/**
 
-You pick a weapon, then explore six wings of Csejte (Čachtice) Castle hunting for five ledger pages. Her risen servants (ghouls, blood maidens and bat swarms) crawl out of the mist more and more often, and you can cut them down. Elizabeth Báthory herself can't be harmed: hide, douse your lantern, flare, or shatter a mirror to freeze her (3s to 15s by mirror tier). Dying leaves your fallen lantern behind on the next attempt.
+You pick a weapon, then explore six wings of Csejte (Čachtice) Castle hunting for five ledger pages. Her risen servants (ghouls, blood maidens and bat swarms) crawl out of the mist quickly, and killing them may drop a sanity vial, a mirror, a coin pouch, or nothing. Only a few mirrors lie in the castle; most are earned. Elizabeth Báthory herself can't be harmed: hide, douse your lantern, flare, or shatter a mirror to freeze her (3s to 15s by mirror tier). Coins bank on the HUD; toss five into the Outer Ward well for a speed boost, a darkness curse, or a Well Dweller. Three rooms hide secret doors behind a candelabra, a skull, and a crooked portrait. Dying leaves your fallen lantern behind on the next attempt.
 
 This is an original game inspired by public-domain Báthory history and legend. It is not affiliated with the 2006 film *Stay Alive*.
 

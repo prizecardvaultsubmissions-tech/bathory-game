@@ -51,10 +51,12 @@ const FEATURES = {
   braziers: [[24, 40], [33, 40], [6, 42], [51, 37], [14, 23], [43, 31], [26, 24], [31, 24], [6, 14], [15, 5], [34, 10], [46, 7]],
   glass: [[18, 42], [40, 39], [29, 31], [13, 12], [40, 8], [11, 28], [50, 24]],
   mirrors: [
-    ["cracked", 22, 41], ["cracked", 49, 42], ["cracked", 4, 23], ["cracked", 52, 22], ["cracked", 35, 31], ["cracked", 27, 5],
-    ["silver", 15, 31], ["silver", 45, 31], ["silver", 21, 19], ["silver", 16, 13],
-    ["gilded", 36, 25], ["gilded", 53, 9], ["gilded", 4, 9],
-    ["obsidian", 9, 4]
+    // Sparse world finds: most mirrors now drop from slain servants.
+    ["cracked", 22, 41],  // Outer Ward, near the start
+    ["cracked", 4, 23],   // Chapel
+    ["cracked", 50, 10],  // North Gate Court, east
+    ["silver", 16, 13],   // Torture / north corridor
+    ["obsidian", 9, 4]    // Torture Gallery — the only placed Obsidian
   ],
   bolts: [[31, 42], [12, 36], [15, 29], [42, 29], [24, 31], [17, 10], [33, 4], [48, 11]],
   spawns: [[7, 31], [15, 22], [52, 27], [42, 22], [4, 14], [17, 12], [7, 4], [27, 4], [50, 10], [42, 12], [36, 31], [21, 25], [5, 38], [52, 42]],
@@ -67,6 +69,40 @@ export const MIRROR_TIERS = {
   gilded: { key: "gilded", name: "Gilded Venetian Mirror", secs: 10, color: 0xe7c873, css: "#e7c873", glyph: "✦" },
   obsidian: { key: "obsidian", name: "Obsidian Scrying Mirror", secs: 15, color: 0x9a4dff, css: "#b27bff", glyph: "◆", repel: true }
 };
+
+export const SECRET_DOORS = [
+  {
+    key: "chapel-hall",
+    name: "Chapel Passage",
+    item: "candelabra",
+    itemName: "iron candelabra",
+    hint: "The candelabra is bolted slightly off-true.",
+    openText: "The wall behind the candelabra grinds aside!",
+    itemTx: 16, itemTy: 22,
+    tiles: [[17, 22], [18, 22], [19, 22]]
+  },
+  {
+    key: "torture-chapel",
+    name: "Bone Stair",
+    item: "skull",
+    itemName: "yellowed skull",
+    hint: "A skull is set into a loose stone.",
+    openText: "The skull sinks — a hidden way yawns open!",
+    itemTx: 16, itemTy: 15,
+    tiles: [[16, 16], [16, 17], [16, 18], [16, 19], [16, 20]]
+  },
+  {
+    key: "hall-north",
+    name: "Portrait Passage",
+    item: "portrait",
+    itemName: "faded portrait",
+    hint: "The portrait hangs a finger's width from the stone.",
+    openText: "The portrait swings — stone slides into the dark!",
+    itemTx: 33, itemTy: 18,
+    tiles: [[33, 17], [33, 16], [33, 15], [33, 14]]
+  }
+];
+
 export const MIRROR_ORDER = ["obsidian", "gilded", "silver", "cracked"];
 
 function rawGrid() {
@@ -108,6 +144,15 @@ export function createLevel() {
   const mirrors = FEATURES.mirrors.map(([tier, tx, ty], i) => ({ id: i, tier, tx, ty, ...center(tx, ty), collected: false }));
   const bolts = FEATURES.bolts.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false }));
   const spawns = FEATURES.spawns.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
+  const wellTile = PROP_DEFS.well[0];
+  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile) };
+  const secrets = SECRET_DOORS.map((d) => ({
+    ...d,
+    itemX: center(d.itemTx, d.itemTy).x,
+    itemY: center(d.itemTx, d.itemTy).y,
+    opened: false,
+    opening: 0
+  }));
 
   return {
     rows: ROWS,
@@ -128,8 +173,20 @@ export function createLevel() {
     playerSpawn: center(...FEATURES.player),
     countessSpawn: center(...FEATURES.countess),
     exitTile: { tx: ex, ty: ey, ...center(ex, ey) },
-    waypoints: FEATURES.waypoints.map(([tx, ty]) => center(tx, ty))
+    waypoints: FEATURES.waypoints.map(([tx, ty]) => center(tx, ty)),
+    well,
+    secrets
   };
+}
+
+export function openSecret(level, secret) {
+  if (secret.opened) return false;
+  secret.opened = true;
+  secret.opening = 1;
+  for (const [tx, ty] of secret.tiles) {
+    if (level.grid[ty] && level.grid[ty][tx] === 1) level.grid[ty][tx] = 0;
+  }
+  return true;
 }
 
 export function roomAt(level, tx, ty) {
@@ -208,6 +265,10 @@ export class Pathing {
   constructor(level) {
     this.level = level;
     this.cache = new Map();
+  }
+
+  invalidate() {
+    this.cache.clear();
   }
 
   field(tx, ty) {

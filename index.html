@@ -39,6 +39,7 @@
         </div>
         <div id="hud-status" class="hud-pill status-pill unseen">UNSEEN</div>
         <div id="hud-weapon" class="hud-pill weapon-pill"><span id="hud-weapon-name">DAGGER</span><span id="hud-ammo" class="pill-value gold"></span></div>
+        <div id="hud-coins" class="hud-pill coin-pill" title="Coins (future shop)"><span class="coin-glyph">◉</span><span id="hud-coin-val" class="pill-value gold">0</span></div>
       </div>
 
       <div class="hud-bars">
@@ -72,6 +73,10 @@
       <div class="freeze-track"><div id="freeze-fill"></div></div>
     </div>
     <div id="toast" class="hidden"></div>
+    <div id="boon-banner" class="boon-banner hidden">
+      <div class="boon-title" id="boon-title"></div>
+      <div class="boon-sub" id="boon-sub"></div>
+    </div>
     <div id="area-title" class="hidden"></div>
 
     <!-- Context prompt banner -->
@@ -167,9 +172,12 @@
       <div class="card-frame modal-card">
         <h2>SURVIVAL CODEX</h2>
         <ul class="codex-list">
-          <li><strong>Attack:</strong> Hold the big <em>ATTACK</em> button. You auto-turn toward the nearest servant in reach. Ghouls, Blood Maidens and Bat Swarms rise from the mist over time, more as the night drags on.</li>
+          <li><strong>Attack:</strong> Hold the big <em>ATTACK</em> button. You auto-turn toward the nearest servant in reach. Ghouls, Blood Maidens and Bat Swarms rise from the mist quickly, more as the night drags on.</li>
+          <li><strong>Drops:</strong> A slain servant may leave a <em>sanity vial</em>, a <em>mirror</em>, a <em>coin pouch</em>, or nothing. Walk over a drop before it fades (~20s).</li>
+          <li><strong>The Well:</strong> Toss 5 coins into the Outer Ward well. The offering may grant a 15s <em>speed boost</em>, a 15s <em>darkness curse</em> (your lantern shrinks), or wake a <em>Well Dweller</em> — a crawling wraith that also rises from the well on its own. Her presence drains Sanity.</li>
+          <li><strong>Secret doors:</strong> A few rooms hide a passage behind a curious item (a chapel candelabra, a skull, a crooked portrait). Search it and the wall will grind open. Found passages appear on the minimap.</li>
           <li><strong>The Countess:</strong> She cannot be harmed. Blows only make her recoil. If she catches you in the open, you die.</li>
-          <li><strong>Mirrors:</strong> Pick them up as you walk. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
+          <li><strong>Mirrors:</strong> Only a few lie in the castle — most come from fallen servants. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
           <li><strong>Lantern &amp; Stealth:</strong> Light lets you see but she sees it too. <em>DOUSE</em> to vanish, though darkness drains <strong>Sanity</strong>.</li>
           <li><strong>Iron Alcoves:</strong> Tap <em>HIDE</em> to vanish from her and the monsters alike.</li>
           <li><strong>Braziers:</strong> Refill <strong>Lamp Oil</strong>, <strong>Sanity</strong> and slowly mend <strong>Health</strong>.</li>
@@ -209,6 +217,7 @@
           <div class="stat-box"><span>SURVIVED</span><strong id="death-time">0:00</strong></div>
           <div class="stat-box"><span>SERVANTS SLAIN</span><strong id="death-kills">0</strong></div>
           <div class="stat-box"><span>MIRRORS USED</span><strong id="death-mirrors">0</strong></div>
+          <div class="stat-box"><span>COINS</span><strong id="death-coins">0</strong></div>
         </div>
         <p class="echo-note">Your fallen lantern stays lit on the stones for your next attempt.</p>
         <div class="title-buttons">
@@ -233,6 +242,7 @@
           <div class="stat-box"><span>SANITY LEFT</span><strong id="win-sanity">100%</strong></div>
           <div class="stat-box"><span>SERVANTS SLAIN</span><strong id="win-kills">0</strong></div>
           <div class="stat-box"><span>WEAPON</span><strong id="win-weapon">—</strong></div>
+          <div class="stat-box"><span>COINS</span><strong id="win-coins">0</strong></div>
         </div>
         <div class="relic-card">
           <div class="relic-foil">FOIL SEAL UNLOCKED</div>

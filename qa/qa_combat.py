@@ -1,4 +1,4 @@
-"""Playwright QA for the v0.3 combat build at a 390x844 phone viewport.
+"""Playwright QA for the v0.4 drops, well & secrets build at a 390x844 phone viewport.
 Usage: /workspace/.venv-pw/bin/python qa/qa_combat.py [base_url] [--noshots]
 """
 import subprocess, sys, time, json
@@ -51,7 +51,15 @@ try:
         page.locator("#btn-begin").tap()
         page.wait_for_timeout(700)
         check("playing_with_weapon", q("[window.__qa.mode, window.__qa.player.weapon]") == ["PLAYING", "mace"])
-        q("() => { window.__qa.spawnTimer = 999; }")  # keep the scripted fights deterministic
+        first_timer = q("window.__qa.spawnTimer")
+        check("first_spawn_timer", 2.8 <= first_timer <= 4.05, round(first_timer, 2))
+        world_mirrors = q("""() => { const c = {cracked:0,silver:0,gilded:0,obsidian:0}; window.__qa.level.mirrors.forEach(m => { c[m.tier]+=1; }); return c; }""")
+        check("few_world_mirrors", world_mirrors == {"cracked": 3, "silver": 1, "gilded": 0, "obsidian": 1}, world_mirrors)
+        early_kinds = q("() => { const Q = window.__qa; const e = Q.elapsed; Q.elapsed = 10; const k = Array.from({length: 24}, () => Q.pickType()); Q.elapsed = e; return k; }")
+        late_kinds = q("() => { const Q = window.__qa; const e = Q.elapsed; Q.elapsed = 25; const k = Array.from({length: 40}, () => Q.pickType()); Q.elapsed = e; return k; }")
+        check("ghouls_only_early", set(early_kinds) == {"ghoul"}, early_kinds[:8])
+        check("maidens_bats_after_20s", "maiden" in late_kinds and "bats" in late_kinds, {"sample": late_kinds[:12], "unique": sorted(set(late_kinds))})
+        q("() => { window.__qa.spawnTimer = 999; window.__qa.wellTimer = 999; }")  # keep scripted fights deterministic
 
         # --- exploration
         jb = page.locator("#joystick-base").bounding_box()
@@ -91,32 +99,76 @@ try:
 
         # --- spawning over time (natural spawner, no scripted spawns)
         q("""() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; });
-                     Q.player.health = 100; Q.spawnTimer = 3; }""")
+                     Q.player.health = 100; Q.spawnTimer = 4; }""")
         t0 = q("window.__qa.elapsed")
         seen = []
-        for i in range(24):
-            page.wait_for_timeout(500)
-            seen.append(q("window.__qa.monsters.filter(m => !m.dead).length"))
-            if max(seen) >= 1 and i > 8: break
+        first_at = None
+        for i in range(16):
+            page.wait_for_timeout(400)
+            n = q("window.__qa.monsters.filter(m => !m.dead).length")
+            seen.append(n)
+            if n >= 1 and first_at is None:
+                first_at = q("window.__qa.elapsed") - t0
+                break
         st = q("window.__qa.spawnTimer")
         far = q("""() => { const Q = window.__qa; return Q.monsters.filter(m=>!m.dead).map(m => Math.round(Math.hypot(m.x-Q.player.x, m.y-Q.player.y)/44)); }""")
-        check("natural_spawn", max(seen) >= 1 and st > 10, {"counts": seen, "next_timer": round(st, 1), "tiles_from_player": far, "game_secs": round(q('window.__qa.elapsed') - t0, 1)})
+        check("natural_spawn", max(seen) >= 1 and first_at is not None and 3.0 <= first_at <= 5.5 and 6 <= st <= 15.1,
+              {"counts": seen, "first_at": round(first_at or -1, 2), "next_timer": round(st, 1), "tiles_from_player": far})
 
-        # --- mirror pickup: walk onto the gilded mirror in the great hall
-        q("() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; }); Q.spawnTimer = 999; Q.place(Q.player, 36, 27); Q.player.angle = -Math.PI/2; }")
-        page.wait_for_timeout(500)
-        page.mouse.move(cx, cy); page.mouse.down(); page.mouse.move(cx, cy - 40, steps=4)
+        # --- world mirror pickup: cracked hand mirror in the Outer Ward at (22,41)
+        q("() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; }); Q.spawnTimer = 999; Q.place(Q.player, 25, 41); Q.player.angle = Math.PI; }")
+        page.wait_for_timeout(400)
+        page.mouse.move(cx, cy); page.mouse.down(); page.mouse.move(cx - 40, cy, steps=4)
         for i in range(20):
             page.wait_for_timeout(150)
-            if q("window.__qa.player.mirrors.gilded") >= 1: break
+            if q("window.__qa.player.mirrors.cracked") >= 1: break
         page.mouse.up()
         page.wait_for_timeout(300)
         mir = q("window.__qa.player.mirrors")
         hudm = q("document.getElementById('hud-mirrors').textContent")
-        check("mirror_pickup", mir["gilded"] >= 1, {"mirrors": mir, "hud": hudm, "btn": q("document.getElementById('mirror-sub').textContent")})
+        check("mirror_pickup", mir["cracked"] >= 1, {"mirrors": mir, "hud": hudm, "btn": q("document.getElementById('mirror-sub').textContent")})
 
-        # --- mirror freeze: Countess closes in hunting; tap MIRROR
+        # --- drops: a slain ghoul pops a coin pouch; collect it, then a sanity vial and a dropped mirror
+        q("""() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; }); Q.drops.length = 0; Q.spawnTimer = 999;
+                     document.getElementById('toast').classList.add('hidden');
+                     Q.place(Q.countess, 50, 5); Q.countess.state = 'PATROL';
+                     Q.place(Q.player, 30, 40); Q.player.angle = -Math.PI/2; Q.player.lanternOn = true;
+                     return Q.killForDrop('ghoul', 'coins', 30, 38, {amount: 12}); }""")
+        page.wait_for_timeout(280)
+        drop_info = q("""() => { const Q = window.__qa; const d = Q.drops.filter(x => !x.collected && !x.remove)[0];
+                                 return d ? {kind:d.kind, amount:d.amount, h:+d.h.toFixed(2), life:d.life, n:Q.drops.length} : {n:Q.drops.length}; }""")
+        shot(page, "13-drop-pop.png")
+        check("drop_pops", drop_info.get("kind") == "coins" and drop_info.get("h", 0) > 0.2, drop_info)
+        # walk north onto the pouch
+        page.mouse.move(cx, cy); page.mouse.down(); page.mouse.move(cx, cy - 40, steps=4)
+        coins = 0
+        for i in range(24):
+            page.wait_for_timeout(150)
+            coins = q("window.__qa.player.coins")
+            if coins >= 12: break
+        page.mouse.up()
+        page.wait_for_timeout(250)
+        hud_coins = q("document.getElementById('hud-coin-val').textContent")
+        shot(page, "14-coin-hud.png")
+        check("coins_collected", coins >= 12 and hud_coins == str(coins), {"coins": coins, "hud": hud_coins})
+
+        q("() => { window.__qa.player.sanity = 50; }")
+        san0 = q("window.__qa.player.sanity")
+        q("""() => { const Q = window.__qa; const tx = Math.floor(Q.player.x/44), ty = Math.floor(Q.player.y/44);
+                     Q.forceDrop('sanity', tx, ty, {amount: 24}); }""")
+        page.wait_for_timeout(250)
+        san1 = q("window.__qa.player.sanity")
+        check("sanity_vial_collected", san1 >= min(100, san0 + 20), {"before": san0, "after": san1})
+
+        q("""() => { const Q = window.__qa; const tx = Math.floor(Q.player.x/44), ty = Math.floor(Q.player.y/44);
+                     Q.forceDrop('mirror', tx, ty, {tier: 'gilded'}); }""")
+        page.wait_for_timeout(250)
+        mir2 = q("window.__qa.player.mirrors")
+        check("mirror_drop_collected", mir2["gilded"] >= 1, mir2)
+
+        # --- mirror freeze: Countess closes in hunting; tap MIRROR (gilded from the drop)
         q("""() => { const Q = window.__qa; Q.place(Q.player, 35, 29); Q.player.angle = -Math.PI/2; Q.player.lanternOn = true;
+                     Q.giveMirror('gilded', Q.player.mirrors.gilded ? 0 : 1);
                      Q.place(Q.countess, 35, 25); Q.countess.state = 'HUNT'; Q.countess.angle = Math.PI/2; }""")
         page.wait_for_timeout(250)
         shot(page, "03-countess-encounter.png")
@@ -140,7 +192,7 @@ try:
         check("countess_stagger_only", q("window.__qa.countess.state") == "STUNNED" and q("window.__qa.mode") == "PLAYING", q("window.__qa.countess.state"))
 
         # --- auto last-ditch mirror on catch
-        q("() => { const Q = window.__qa; Q.giveMirror('cracked', 1); Q.countess.state = 'HUNT'; Q.countess.x = Q.player.x - 6; Q.countess.y = Q.player.y; }")
+        q("() => { const Q = window.__qa; for (const k in Q.player.mirrors) Q.player.mirrors[k] = 0; Q.giveMirror('cracked', 1); Q.countess.state = 'HUNT'; Q.countess.x = Q.player.x - 6; Q.countess.y = Q.player.y; }")
         page.wait_for_timeout(500)
         auto = q("[window.__qa.mode, window.__qa.countess.state, window.__qa.player.mirrors.cracked]")
         check("auto_mirror_on_catch", auto == ["PLAYING", "FROZEN", 0], auto)
@@ -157,6 +209,74 @@ try:
         shot(page, "09-obsidian-repel.png")
         d1 = q("() => { const Q=window.__qa; return Q.monsters.filter(m=>!m.dead).map(m=>Math.hypot(m.x-Q.player.x,m.y-Q.player.y)); }")
         check("obsidian_repel", q("window.__qa.countess.state") == "FROZEN" and (sum(d1) > sum(d0) or len(d1) < len(d0)), {"before": [round(x) for x in d0], "after": [round(x) for x in d1]})
+
+
+        # --- well, coin toss, Well Dweller, secret doors
+        q("""() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; }); Q.drops.length = 0;
+                     Q.spawnTimer = 999; Q.wellTimer = 999; Q.player.speedBoost = 0; Q.player.darkCurse = 0;
+                     Q.place(Q.countess, 50, 5); Q.countess.state = 'PATROL';
+                     Q.place(Q.player, 16, 42); Q.player.angle = -Math.PI/2; Q.player.lanternOn = true;
+                     Q.giveCoins(20);
+                     ['toast','boon-banner','area-title'].forEach(id => document.getElementById(id).classList.add('hidden')); }""")
+        page.wait_for_timeout(1200)
+        q("() => document.getElementById('area-title').classList.add('hidden')")
+        page.wait_for_timeout(80)
+        shot(page, "15-well.png")
+        well = q("[window.__qa.well.tx, window.__qa.well.ty, window.__qa.player.coins, document.getElementById('interact-label').textContent]")
+        check("well_present", well[0] == 16 and well[1] == 41 and well[2] >= 20, well)
+
+        coins0 = q("window.__qa.player.coins")
+        outcome_speed = q("window.__qa.tossWell('speed')")
+        page.wait_for_timeout(200)
+        spd = q("[window.__qa.player.speedBoost, window.__qa.player.coins, document.getElementById('boon-title').textContent, document.getElementById('hud-status').textContent]")
+        check("well_speed", outcome_speed == "speed" and spd[0] > 14 and spd[1] == coins0 - 5, {"outcome": outcome_speed, "boost": spd})
+
+        q("() => { window.__qa.player.speedBoost = 0; }")
+        outcome_dark = q("window.__qa.tossWell('dark')")
+        page.wait_for_timeout(200)
+        dark = q("[window.__qa.player.darkCurse, document.getElementById('boon-title').textContent, document.getElementById('hud-status').textContent]")
+        check("well_darkness", outcome_dark == "dark" and dark[0] > 14, {"outcome": outcome_dark, "curse": dark})
+
+        q("() => { window.__qa.player.darkCurse = 0; document.getElementById('boon-banner').classList.add('hidden'); }")
+        dweller_id = q("window.__qa.tossWell('dweller')")
+        page.wait_for_timeout(400)
+        q("""() => { const Q = window.__qa; const m = Q.monsters.find(x => x.kind === 'dweller');
+                     if (m) { m.state = 'WANDER'; m.timer = 0; Q.place(m, 16, 41); }
+                     Q.place(Q.player, 18, 41); Q.player.angle = Math.PI; Q.player.lanternOn = true;
+                     ['toast','area-title'].forEach(id => document.getElementById(id).classList.add('hidden')); }""")
+        page.wait_for_timeout(700)
+        dw = q("""() => { const Q = window.__qa; const m = Q.monsters.find(x => x.kind === 'dweller' && !x.remove);
+                           return m ? {kind:m.kind, hp:m.hp, maxHp:m.maxHp, state:m.state, fromWell:!!m.fromWell, n:Q.monsters.filter(x=>x.kind==='dweller'&&!x.dead).length} : null; }""")
+        shot(page, "16-well-dweller.png")
+        check("well_dweller", dw and dw["kind"] == "dweller" and dw["maxHp"] == 80 and dw["n"] >= 1, dw)
+
+        # refuse toss without coins
+        q("() => { window.__qa.player.coins = 0; }")
+        refused = q("window.__qa.tossWell('speed')")
+        check("well_needs_coins", refused is False and q("window.__qa.player.speedBoost") == 0, refused)
+
+        # --- secret door: chapel candelabra opens into the Great Hall
+        q("""() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; });
+                     Q.spawnTimer = 999; Q.wellTimer = 999;
+                     Q.place(Q.countess, 50, 5); Q.countess.state = 'PATROL';
+                     Q.place(Q.player, 15, 22); Q.player.angle = 0; Q.player.lanternOn = true;
+                     ['toast','boon-banner','area-title'].forEach(id => document.getElementById(id).classList.add('hidden')); }""")
+        page.wait_for_timeout(700)
+        before = q("() => window.__qa.level.secrets.find(s => s.key==='chapel-hall').tiles.map(([x,y]) => window.__qa.level.grid[y][x])")
+        opened = q("window.__qa.openSecret('chapel-hall')")
+        page.wait_for_timeout(2000)
+        q("""() => { const Q = window.__qa; Q.place(Q.player, 17, 22); Q.player.angle = 0;
+                     ['toast','boon-banner','area-title'].forEach(id => document.getElementById(id).classList.add('hidden')); }""")
+        page.wait_for_timeout(600)
+        after = q("() => { const s = window.__qa.level.secrets.find(d => d.key==='chapel-hall'); return {opened:s.opened, cells:s.tiles.map(([x,y]) => window.__qa.level.grid[y][x])}; }")
+        shot(page, "17-secret-door.png")
+        # skull + portrait also open
+        skull = q("window.__qa.openSecret('torture-chapel')")
+        port = q("window.__qa.openSecret('hall-north')")
+        n_open = q("window.__qa.secrets.filter(s => s.opened).length")
+        check("secret_starts_closed", before == [1, 1, 1], before)
+        check("secret_opens", opened is True and after["opened"] is True and after["cells"] == [0, 0, 0], after)
+        check("all_three_secrets", n_open == 3 and skull and port, n_open)
 
         # --- larger map: torture gallery & north gate court views
         q("""() => { const Q = window.__qa; Q.monsters.forEach(m => { m.dead = true; m.remove = true; }); Q.place(Q.countess, 50, 40); Q.countess.state='PATROL'; Q.countess.freezeTimer=0;

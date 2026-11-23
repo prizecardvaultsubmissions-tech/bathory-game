@@ -304,6 +304,7 @@ export class SoundEngine {
   playMonsterSpot(kind) {
     if (kind === "bats") { for (let i = 0; i < 4; i++) this._tone(3200 + Math.random() * 1500, 0.05, { type: "square", gain: 0.035, delay: i * 0.06 }); return; }
     if (kind === "maiden") { this._tone(700, 0.5, { type: "sawtooth", gain: 0.05, to: 1200 }); return; }
+    if (kind === "dweller") { this._tone(70, 0.9, { type: "sine", gain: 0.12, to: 40 }); this._noise(0.7, { type: "lowpass", freq: 250, gain: 0.16, decay: 0.7 }); return; }
     this._tone(110, 0.6, { type: "sawtooth", gain: 0.08, to: 70 });
   }
 
@@ -331,5 +332,30 @@ export class SoundEngine {
   playSpawn() {
     this._noise(0.9, { type: "lowpass", freq: 300, gain: 0.12, decay: 0.7 });
     this._tone(55, 0.9, { type: "sawtooth", gain: 0.05, to: 40 });
+  }
+  playWellToss() {
+    this._noise(0.4, { type: "bandpass", freq: 1400, q: 0.6, gain: 0.18, decay: 0.4 });
+    this._tone(900, 0.15, { type: "sine", gain: 0.08, to: 400 });
+    this._tone(180, 0.6, { type: "sine", gain: 0.08, to: 70, delay: 0.12 });
+  }
+  playBoon() {
+    this._tone(523, 0.2, { gain: 0.1 });
+    this._tone(784, 0.35, { gain: 0.1, delay: 0.08 });
+    this._tone(1046, 0.4, { gain: 0.08, delay: 0.16 });
+  }
+  playCurse() {
+    this._tone(220, 0.7, { type: "sawtooth", gain: 0.08, to: 70 });
+    this._noise(0.8, { type: "lowpass", freq: 400, gain: 0.16, decay: 0.7 });
+  }
+  playWellSpawn() {
+    this._noise(1.2, { type: "lowpass", freq: 220, gain: 0.2, decay: 0.9 });
+    this._tone(48, 1.4, { type: "sine", gain: 0.12, to: 32 });
+    this._tone(90, 0.8, { type: "triangle", gain: 0.06, to: 40, delay: 0.3 });
+  }
+  playSecretOpen() {
+    this._noise(1.4, { type: "lowpass", freq: 500, gain: 0.28, decay: 0.8 });
+    this._tone(90, 0.5, { type: "square", gain: 0.06, to: 40 });
+    this._noise(0.6, { type: "bandpass", freq: 800, q: 0.5, gain: 0.12, decay: 0.5, delay: 0.4 });
+    this._tone(60, 1.0, { type: "sine", gain: 0.08, to: 35, delay: 0.2 });
   }
 }

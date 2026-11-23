@@ -151,11 +151,12 @@ export class Renderer3D {
         uTime: { value: 0 },
         uRedShift: { value: 0 },
         uIce: { value: 0 },
-        uHurt: { value: 0 }
+        uHurt: { value: 0 },
+        uDark: { value: 0 }
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt;
+        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt; uniform float uDark;
         varying vec2 vUv;
         ${BAYER}
         void main(){
@@ -173,6 +174,10 @@ export class Renderer3D {
           c = mix(c, vec3(lum * 0.85, lum * 0.95, lum * 1.15) + vec3(0.0, 0.02, 0.06), uIce * 0.35);
           vec2 q = vUv - 0.5;
           c = mix(c, vec3(0.6, 0.0, 0.05), uHurt * smoothstep(0.1, 0.5, length(q)));
+          if (uDark > 0.0) {
+            c *= 1.0 - uDark * 0.62;
+            c = mix(c, vec3(0.02, 0.03, 0.06), uDark * 0.45 * smoothstep(0.05, 0.55, length(q)));
+          }
           float b = bayer4(gl_FragCoord.xy) - 0.5;
           c = floor(c * 31.0 + b + 0.5) / 31.0;
           c *= 1.0 - dot(q, q) * 0.9;
@@ -202,6 +207,7 @@ export class Renderer3D {
     this.playerYaw = Math.PI;
     this.countessYaw = 0;
     this.monsterRigs = new Map();
+    this.dropRigs = new Map();
     this.weaponId = null;
     this.lightPoolTimer = 0;
     this.resize();
@@ -233,6 +239,9 @@ export class Renderer3D {
     }
     for (const rig of this.monsterRigs.values()) this.scene.remove(rig.root);
     this.monsterRigs.clear();
+    for (const rig of this.dropRigs.values()) this.scene.remove(rig.root);
+    this.dropRigs.clear();
+    if (this.secretRigs) for (const r of this.secretRigs) { r.wall.position.y = 0; r.open = 0; }
     this.snapCam = true;
   }
 
@@ -300,9 +309,14 @@ export class Renderer3D {
     }
 
     // ---------- Walls (instanced) ----------
+    const secretSet = new Set();
+    if (level.secrets) for (const d of level.secrets) for (const [tx, ty] of d.tiles) secretSet.add(`${tx},${ty}`);
+    this.secretSet = secretSet;
+
     const wallTiles = [];
     for (let ty = 0; ty < level.rows; ty++) {
       for (let tx = 0; tx < level.cols; tx++) {
+        if (secretSet.has(`${tx},${ty}`)) continue;
         if (level.grid[ty][tx] !== 1) continue;
         let touches = false;
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isOpen(tx + dx, ty + dy)) touches = true;
@@ -464,6 +478,107 @@ export class Renderer3D {
           B.add(new THREE.ConeGeometry(1.3, 0.6, 4), woodMat, c.x, 2.3, c.z, 0, Math.PI / 4);
           break;
       }
+    }
+
+
+
+    const glowMatEarly = (color, opacity) => new THREE.SpriteMaterial({ map: T.glow, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.glowMat = glowMatEarly;
+
+    // ---------- Secret doors & trigger items ----------
+    this.secretRigs = [];
+    const seamMat = this._mat("secret-seam", { color: 0x1a1410, emissive: 0x080604 });
+    for (const d of (level.secrets || [])) {
+      const wall = new THREE.Group();
+      let cx = 0, cz = 0;
+      for (const [tx, ty] of d.tiles) {
+        const c = tileCenter(tx, ty);
+        cx += c.x; cz += c.z;
+        const block = new THREE.Mesh(new THREE.BoxGeometry(TILE, WALL_H, TILE), wallSide);
+        block.position.set(c.x, WALL_H / 2, c.z);
+        wall.add(block);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(TILE, 0.08, TILE), wallTop);
+        top.position.set(c.x, WALL_H + 0.04, c.z);
+        wall.add(top);
+        // hairline crack on the faces — a hint that the masonry isn't true
+        const crack = new THREE.Mesh(new THREE.BoxGeometry(0.06, WALL_H * 0.7, 0.06), seamMat);
+        crack.position.set(c.x, WALL_H * 0.45, c.z);
+        wall.add(crack);
+      }
+      scene.add(wall);
+      const item = new THREE.Group();
+      const ix = (d.itemTx + 0.5) * TILE, iz = (d.itemTy + 0.5) * TILE;
+      item.position.set(ix, 0, iz);
+      if (d.item === "candelabra") {
+        const iron = this._mat("candelabra", { color: 0x2a2620, emissive: 0x100c08 });
+        const wax = this._mat("cand-wax", { color: 0xe8dcc0, emissive: 0x3a2a10 });
+        item.add(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 1.1, 6)));
+        item.children[0].material = iron;
+        item.children[0].position.y = 0.55;
+        for (const [sx, sy] of [[-0.22, 0.95], [0, 1.2], [0.22, 0.95]]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.22), iron);
+          arm.position.set(sx * 0.5, 0.9, 0);
+          item.add(arm);
+          const cndl = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.28, 6), wax);
+          cndl.position.set(sx, sy, 0);
+          item.add(cndl);
+          const fl = new THREE.Sprite(this.glowMat(0xffb060, 0.85));
+          fl.position.set(sx, sy + 0.2, 0);
+          fl.scale.set(0.35, 0.45, 1);
+          item.add(fl);
+        }
+      } else if (d.item === "skull") {
+        const bone = this._mat("skull", { color: 0xe8dcb8, emissive: 0x2a2410 });
+        const socket = this._mat("socket", { color: 0x120e0c });
+        const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), bone);
+        cranium.scale.set(1, 0.9, 1.1);
+        cranium.position.y = 0.42;
+        const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.16), bone);
+        jaw.position.set(0, 0.26, 0.06);
+        const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.2, 6), this._mat("plinth", { color: 0x4a4038 }));
+        plinth.position.y = 0.1;
+        item.add(plinth, cranium, jaw);
+        for (const sx of [-0.07, 0.07]) {
+          const e = new THREE.Mesh(new THREE.CircleGeometry(0.05, 6), socket);
+          e.position.set(sx, 0.46, 0.2);
+          item.add(e);
+        }
+        const halo = new THREE.Sprite(this.glowMat(0xc4a070, 0.4));
+        halo.position.y = 0.5;
+        halo.scale.set(0.9, 0.9, 1);
+        item.add(halo);
+      } else if (d.item === "portrait") {
+        // Hang it on the north wall of the hall (south face of the first secret tile).
+        const frame = this._mat("pframe", { color: 0x5a3a14, emissive: 0x1a0e04 });
+        const canvas = this._mat("portrait", { color: 0x2a1814, emissive: 0x120804 });
+        const group = new THREE.Group();
+        const fr = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.15, 0.06), frame);
+        const cv = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.95), canvas);
+        cv.position.z = 0.04;
+        group.add(fr, cv);
+        group.position.set(0, 1.55, -0.85);
+        group.rotation.z = 0.09; // slightly crooked — the hint
+        item.add(group);
+        const halo = new THREE.Sprite(this.glowMat(0x6a4010, 0.35));
+        halo.position.set(0, 1.55, -0.7);
+        halo.scale.set(1.2, 1.4, 1);
+        item.add(halo);
+      }
+      scene.add(item);
+      this.secretRigs.push({ key: d.key, wall, item, open: 0 });
+    }
+
+    // Well mist / offering glow (the stone well itself is batched)
+    this.wellGroup = new THREE.Group();
+    if (level.well) {
+      const wc = tileCenter(level.well.tx, level.well.ty);
+      this.wellGroup.position.set(wc.x, 0, wc.z);
+      const mist = new THREE.Sprite(this.glowMat(0x6a88aa, 0.35));
+      mist.position.y = 0.7;
+      mist.scale.set(2.2, 1.4, 1);
+      this.wellMist = mist;
+      this.wellGroup.add(mist);
+      scene.add(this.wellGroup);
     }
 
     // ---------- Iron alcoves ----------
@@ -883,7 +998,16 @@ export class Renderer3D {
       // rise from mist / dissolve
       let scale = 1;
       let sink = 0;
-      if (m.state === "RISE") { scale = Math.max(0.05, 1 - m.timer / 0.9); sink = -(m.timer / 0.9) * 1.2; }
+      if (m.state === "RISE") {
+        const riseT = m.fromWell ? 1.8 : 0.9;
+        const k = Math.max(0, Math.min(1, m.timer / riseT));
+        scale = Math.max(0.05, 1 - k);
+        sink = m.fromWell ? -k * 2.4 : -k * 1.2;
+        if (m.fromWell && m.emergeFrom) {
+          const a = 1 - k;
+          rig.root.position.set((m.emergeFrom.x * (1 - a) + m.x * a) * S, sink, (m.emergeFrom.y * (1 - a) + m.y * a) * S);
+        }
+      }
       let opacity = 1;
       if (m.dead) { opacity = Math.max(0, 1 - m.deadTime / 1.1); sink = -m.deadTime * 0.9; scale = 1 + m.deadTime * 0.2; }
       rig.root.scale.set(scale, m.dead ? Math.max(0.05, 1 - m.deadTime * 0.8) : scale, scale);
@@ -897,7 +1021,7 @@ export class Renderer3D {
         else if (m.dead) mat.emissive.setHex(0x400010);
         else mat.emissive.setHex(0x000000);
       }
-      for (const e of rig.eyes) e.material.opacity = m.dead ? opacity * 0.5 : 0.95;
+      for (const e of rig.eyes) { e.visible = !rig.hideEyes; e.material.opacity = m.dead ? opacity * 0.5 : (rig.hideEyes ? 0 : 0.95); }
 
       // health bar (faces camera)
       rig.bar.visible = !m.dead && m.hp < m.maxHp;
@@ -921,6 +1045,18 @@ export class Renderer3D {
         rig.limbs.forEach((l, i) => { l.rotation.x = Math.sin(rig.walk * 1.6 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.6; });
         rig.body.position.y = windup ? 0.25 : Math.abs(Math.sin(rig.walk * 1.6)) * 0.06;
         rig.body.rotation.x = windup ? -0.5 : hurt ? 0.3 : 0;
+      } else if (m.kind === "dweller") {
+        const jerk = 1 - (m.lurchPause > 0 ? 1 : 0);
+        if (rig.arms) {
+          rig.arms[0].rotation.x = Math.sin(rig.walk * 1.1) * 0.55 * jerk + (windup ? -0.8 : 0);
+          rig.arms[1].rotation.x = Math.sin(rig.walk * 1.1 + Math.PI) * 0.55 * jerk + (windup ? -0.8 : 0);
+        }
+        if (rig.legs) {
+          rig.legs[0].rotation.x = Math.sin(rig.walk * 0.9 + 0.4) * 0.25;
+          rig.legs[1].rotation.x = Math.sin(rig.walk * 0.9 + Math.PI) * 0.25;
+        }
+        rig.body.rotation.x = (hurt ? 0.5 : windup ? 0.45 : 0.72) + Math.sin(t * 9 + m.id) * 0.03;
+        rig.body.position.y = (m.lurchPause > 0 ? 0.02 : 0) + (windup ? 0.12 : 0);
       } else {
         rig.bats.forEach((b) => {
           const a = t * 3 + b.phase + m.id;
@@ -949,12 +1085,16 @@ export class Renderer3D {
     this.lastNow = now;
     this.time += dt;
     const t = this.time;
-    const { player, countess, mode, flareFlash = 0, deathEcho, witching, monsters = [], projectiles = [], fx = [], shake = 0, hurt = 0, weapon } = state;
+    const { player, countess, mode, flareFlash = 0, deathEcho, witching, monsters = [], projectiles = [], drops = [], fx = [], shake = 0, hurt = 0, weapon, speedBoost = 0, darkCurse = 0 } = state;
     const level = this.level;
     if (weapon !== undefined) this.setWeapon(weapon);
 
     this._consumeFx(fx);
     this._updateFx(dt);
+    this._syncDrops(drops, t);
+    this._updateSecrets(level, dt);
+    this._updateWell(level, t, fx);
+    if (player && speedBoost > 0 && mode === "PLAYING") this._speedTrail(player, dt, t);
 
     this.bigFlames.material.size = 0.8 + Math.sin(t * 17) * 0.06;
     this.smallFlames.material.size = 0.32 + Math.sin(t * 21 + 1) * 0.04;
@@ -1051,13 +1191,16 @@ export class Renderer3D {
       const dirZ = Math.sin(player.angle);
       this.spot.visible = lit;
       const lowOilFlicker = player.oil < 15 ? 0.6 + 0.4 * Math.abs(Math.sin(t * 26)) : 1;
-      this.spot.intensity = 60 * lowOilFlicker;
+      const cursed = darkCurse > 0;
+      this.spot.intensity = 60 * lowOilFlicker * (cursed ? 0.28 : 1);
+      this.spot.distance = cursed ? 6.5 : 16;
+      this.spot.angle = cursed ? 0.34 : 0.62;
       this.spot.position.set(px + dirX * 0.45, 1.25, pz + dirZ * 0.45);
-      this.spot.target.position.set(px + dirX * 6, 0, pz + dirZ * 6);
+      this.spot.target.position.set(px + dirX * (cursed ? 3 : 6), 0, pz + dirZ * (cursed ? 3 : 6));
       this.aura.position.set(px + dirX * 0.4, 1.3, pz + dirZ * 0.4);
       const staffGlow = weapon === "staff" && !player.hidden ? 4 : 0;
-      this.aura.intensity = (lit ? 9 : 2.2) + staffGlow + flareFlash * 160;
-      this.aura.distance = 5 + flareFlash * 10;
+      this.aura.intensity = ((lit ? 9 : 2.2) + staffGlow + flareFlash * 160) * (cursed ? 0.35 : 1);
+      this.aura.distance = (5 + flareFlash * 10) * (cursed ? 0.4 : 1);
       this.aura.color.setHex(flareFlash > 0.05 ? 0xfff0d0 : 0xffc27a);
       focus = new THREE.Vector3(px, 0, pz);
     } else {
@@ -1184,6 +1327,7 @@ export class Renderer3D {
     this.postMat.uniforms.uRedShift.value = dangerRed * 0.45;
     this.postMat.uniforms.uIce.value = countess && countess.state === AI_STATE.FROZEN && !inMenu ? 1 : 0;
     this.postMat.uniforms.uHurt.value = hurt;
+    this.postMat.uniforms.uDark.value = darkCurse > 0 ? Math.min(1, 0.55 + 0.25 * Math.sin(t * 2.2)) : 0;
     this.postMat.uniforms.uTime.value = t;
 
     this.renderer.info.reset();
@@ -1191,6 +1335,114 @@ export class Renderer3D {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.postScene, this.postCam);
+  }
+
+
+
+  _updateSecrets(level, dt) {
+    if (!this.secretRigs || !level || !level.secrets) return;
+    for (const d of level.secrets) {
+      const rig = this.secretRigs.find((r) => r.key === d.key);
+      if (!rig) continue;
+      const target = d.opened ? 1 : 0;
+      rig.open += (target - rig.open) * Math.min(1, dt * 1.6);
+      if (d.opened && rig.open < 0.98) rig.open = Math.min(1, rig.open + dt * 0.85);
+      rig.wall.position.y = -WALL_H * rig.open;
+      rig.wall.visible = rig.open < 0.98;
+      if (rig.item) rig.item.rotation.y = d.opened ? 0.4 : Math.sin(this.time * 0.6) * 0.04;
+    }
+  }
+
+  _updateWell(level, t, fx) {
+    if (!this.wellMist || !level || !level.well) return;
+    const pulse = 0.3 + 0.15 * Math.sin(t * 2.2);
+    this.wellMist.material.opacity = pulse;
+    this.wellMist.scale.set(2.0 + Math.sin(t * 1.6) * 0.2, 1.3 + Math.sin(t * 2.1) * 0.15, 1);
+  }
+
+  _speedTrail(player, dt, t) {
+    if (!this._trailAcc) this._trailAcc = 0;
+    this._trailAcc += dt;
+    if (this._trailAcc < 0.05) return;
+    this._trailAcc = 0;
+    const x = player.x * S, z = player.y * S;
+    this._emit(x, 0.7, z, 3, 0xffe08a, 0.5, 0.8, 0.4, 0.25);
+  }
+
+  _makeDropRig(d) {
+    const g = new THREE.Group();
+    const spin = new THREE.Group();
+    let haloColor = 0xe7c873;
+    if (d.kind === "sanity") {
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.32, 8), this._mat("vial-glass", { color: 0x8fd4f0, emissive: 0x143050, transparent: true, opacity: 0.72 }));
+      glass.position.y = 0.22;
+      const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.18, 8), this._mat("vial-liq", { color: 0x5ca4d6, emissive: 0x1a4a80 }));
+      liquid.position.y = 0.16;
+      const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 6), this._mat("vial-cork", { color: 0x6a3b1f }));
+      cork.position.y = 0.40;
+      spin.add(glass, liquid, cork);
+      haloColor = 0x7ec8e8;
+    } else if (d.kind === "coins") {
+      const bag = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6), this._mat("pouch", { color: 0x6a4420, emissive: 0x1a1004 }));
+      bag.scale.set(1.15, 0.95, 1.15);
+      bag.position.y = 0.22;
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.12, 6), this._mat("pouch-neck", { color: 0x3a2410 }));
+      neck.position.y = 0.42;
+      const tie = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.04), this._mat("pouch-tie", { color: 0xc9a24d, emissive: 0x3a2a08 }));
+      tie.position.y = 0.38;
+      const gold = this._mat("coin-gold", { color: 0xffe08a, emissive: 0x6a5010 });
+      for (let i = 0; i < 3; i++) {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.035, 8), gold);
+        c.rotation.x = Math.PI / 2 + (i - 1) * 0.25;
+        c.rotation.z = i * 0.7;
+        c.position.set((i - 1) * 0.09, 0.36 + i * 0.04, 0.14);
+        spin.add(c);
+      }
+      spin.add(bag, neck, tie);
+      haloColor = 0xffe08a;
+    } else {
+      const tier = MIRROR_TIERS[d.tier] || MIRROR_TIERS.cracked;
+      const frameMat = this._mat(`mframe-${d.tier || "cracked"}`, { color: tier.color, emissive: d.tier === "obsidian" ? 0x3a1060 : 0x1a1408, side: THREE.DoubleSide });
+      const frame = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.05, 4, 10), frameMat);
+      frame.scale.set(1, 1.3, 1);
+      const pane = new THREE.Mesh(new THREE.CircleGeometry(0.2, 10), d.tier === "obsidian" ? new THREE.MeshBasicMaterial({ color: 0x1a0a2a, side: THREE.DoubleSide }) : this._mat("pane", { color: 0xcfe0f0, emissive: 0x223344, side: THREE.DoubleSide }));
+      pane.scale.set(1, 1.3, 1);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.24, 0.06), frameMat);
+      handle.position.y = -0.40;
+      spin.add(frame, pane, handle);
+      haloColor = tier.color;
+    }
+    const halo = new THREE.Sprite(this.glowMat(haloColor, 0.7));
+    halo.position.y = 0.32;
+    halo.scale.set(1.85, 1.85, 1);
+    spin.scale.setScalar(1.15);
+    g.add(spin, halo);
+    return { root: g, spin, halo };
+  }
+
+  _syncDrops(list, t) {
+    const seen = new Set();
+    for (const d of list) {
+      if (d.collected || d.remove) continue;
+      seen.add(d.id);
+      let rig = this.dropRigs.get(d.id);
+      if (!rig) {
+        rig = this._makeDropRig(d);
+        this.dropRigs.set(d.id, rig);
+        this.scene.add(rig.root);
+      }
+      const blinkOff = d.life < 4 && Math.sin(d.life * 18) > 0.2;
+      rig.root.visible = !blinkOff;
+      rig.root.position.set(d.x * S, d.h, d.y * S);
+      rig.spin.rotation.y = t * 2.2 + d.id;
+      if (rig.halo) rig.halo.material.opacity = 0.45 + 0.3 * Math.sin(t * 6 + d.id);
+    }
+    for (const [id, rig] of this.dropRigs) {
+      if (!seen.has(id)) {
+        this.scene.remove(rig.root);
+        this.dropRigs.delete(id);
+      }
+    }
   }
 
   stats() {

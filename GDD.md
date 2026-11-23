@@ -24,14 +24,14 @@ You install an unarchived horror build recovered from an estate drive—a top-do
 
 ---
 
-## 3. Core Gameplay Loop (v0.3 "Combat & Mirrors")
+## 3. Core Gameplay Loop (v0.4 "Drops & Pressure")
 
 1. **Choose Your Arms:** Every run starts at the *Armory of Csejte*. Pick one of four original weapons (table below). Your pick is remembered, and RETRY keeps it.
 2. **Explore Six Wings:** The castle is now one large connected map, about 5x the v0.2 footprint (58x46 = 2,668 tiles vs. 26x20 = 520; 1,584 walkable vs. 359). It covers the Outer Ward, the Chapel of St. Ladislaus, the Kitchens & Cellars, the Great Hall, the Torture Gallery and the North Gate Court. Each wing has its own floor, dressing and fixed cinematic camera angle, plus an area title card as you enter.
-3. **Fight Her Servants:** Monsters rise slowly from the mist at spawn points far from you and out of sight. Cut them down with your weapon.
+3. **Fight Her Servants:** Monsters rise from the mist at spawn points far from you and out of sight, quickly and more as the night goes on. Cut them down with your weapon — they may drop a prize.
 4. **Never Fight Her:** The Countess cannot be harmed. A hit only makes her recoil for a split second. If she catches you in the open, you die, unless you carry a mirror.
-5. **Collect Mirrors:** Walk over mirror pickups to add them to your inventory. A mirror freezes her in glass, and better mirrors hold her longer.
-6. **Manage Light, Sanity, Oil and Health:** Lantern vs. darkness works as before. Braziers now also slowly mend Health.
+5. **Collect Mirrors:** Only a handful of mirrors lie in the castle. Most come from slain servants. A mirror freezes her in glass, and better mirrors hold her longer.
+6. **Manage Light, Sanity, Oil and Health:** Lantern vs. darkness works as before. Braziers slowly mend Health. Sanity vials dropped by servants restore a burst of Sanity.
 7. **Recover the 5 Ledger Pages** spread across the wings, then escape through the **North Gate**. Dying leaves a **Death Echo** (your dropped lantern).
 
 ### Weapons (pick one per run)
@@ -47,25 +47,60 @@ Attacks auto-aim at the nearest servant in reach. Hold **ATTACK** to keep swingi
 ### Monsters (the Countess's risen servants)
 | Monster | HP | Speed | Damage | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Servant Ghoul** | 46 | slow | 12 | Tough shambler; the only type for the first ~45s |
+| **Servant Ghoul** | 46 | slow | 12 | Tough shambler; the only type for the first ~20s. Slightly better drop odds. |
 | **Blood Maiden** | 28 | very fast | 9 | Fragile but closes distance quickly |
 | **Bat Swarm** | 20 | fast, erratic | 5 | Each bite also drains 6% Lamp Oil |
 
 - **AI:** RISE (0.9s from mist) → WANDER → CHASE (they spot you more easily while your lantern is lit) → WINDUP telegraph → strike → cooldown. Hiding in an alcove makes you invisible to them too.
-- **Spawner:** The first rise happens about 9s in. After that, one rises every `max(14, 32 − 0.08·t) + rand(0–8)` seconds, at spawn points more than 11 tiles away and out of line of sight. At most `min(8, 3 + ⌊t/60⌋)` are active at once. Maidens and bats join after ~45s, and after 2.5 min they sometimes come in pairs.
-- **Death:** a dissolve into mist. 18% of kills restore +6 Health and +8 Sanity.
+- **Spawner:** The first rise happens about 4s in. After that, one rises every ~6–15s, tightening toward 6s as time passes (`6 + rand(0 … max(0, 9 − 0.04·t))`), at spawn points more than 11 tiles away and out of line of sight. At most `min(10, 4 + ⌊t/40⌋)` are active at once. Maidens and bats join after ~20s, and after ~80s they sometimes come in pairs.
+- **Death & drops:** a dissolve into mist. The corpse may leave a pickup that pops out with a bounce and glow, is collected by walking over it, and despawns after 20s (blinks in the last 4s):
+
+| Result | Typical chance | Ghoul chance | Effect |
+| :--- | :--- | :--- | :--- |
+| Nothing | 40% | 30% | — |
+| Sanity vial | 25% | 26% | +24 Sanity |
+| Coin pouch | 23% | 26% | +6–13 coins (ghouls +12–20). Banked on the HUD. Toss 5 into the well for a random boon, curse, or Well Dweller. A later shop may still use them. |
+| Mirror | 12% | 18% | Weighted by tier: Cracked ~70% (60% from ghouls), Silver ~22% (26%), Gilded ~7% (11%), Obsidian ~1% (3%). |
+
+### Coins
+A run starts at 0. Pouches add to a **COINS** counter in the HUD (and on the death/win screens). They have no use in v0.4; the design intent is a later shop or weapon/mirror upgrades between or during runs.
 
 ### Mirrors (freeze the Countess)
-| Tier | Freeze | Count in castle | Extra |
+| Tier | Freeze | Placed in castle | Extra |
 | :--- | :--- | :--- | :--- |
-| ◐ Cracked Hand Mirror | 3s | 6 | |
-| ◯ Silver Vanity Mirror | 6s | 4 | |
-| ✦ Gilded Venetian Mirror | 10s | 3 | |
-| ◆ Obsidian Scrying Mirror | 15s | 1 (Torture Gallery) | Also blasts away nearby servants (repel + 18 dmg) |
+| ◐ Cracked Hand Mirror | 3s | 3 (Ward, Chapel, North Court) | Common servant drop |
+| ◯ Silver Vanity Mirror | 6s | 1 (Torture / north corridor) | Uncommon drop |
+| ✦ Gilded Venetian Mirror | 10s | 0 — drop only | Rare drop |
+| ◆ Obsidian Scrying Mirror | 15s | 1 (Torture Gallery) | Very rare drop. Also blasts away nearby servants (repel + 18 dmg) |
 
+- Most mirrors are earned by killing servants, not found on the floor.
 - **Manual:** Tap **MIRROR** while she is within ~7 tiles, or within ~11 tiles if you can see her. It always uses the best mirror you hold.
 - **Automatic last-ditch save:** If she catches you while you're not hidden and you hold any mirror, the best one shatters, she freezes, and you're shoved free.
 - **Freeze effects:** an ice-glass shell and gold frame around her, a pale glow, a blue-shifted screen and a countdown banner that turns red in the last 1.5s. When she thaws, she searches where she stood.
+
+
+### The Well & Coin Toss
+A stone well stands in the Outer Ward. Killing servants is the main way to earn coins; standing at the well and tapping **TOSS** spends 5 coins and rolls one of three outcomes (equal chance):
+- **Speed Boost (15s):** movement ×1.5, a gold particle trail, SWIFT status.
+- **Darkness Curse (15s):** lantern cone and radius shrink, the screen dims, CURSED status.
+- **Well Dweller:** immediately summons a Well Dweller from the water (capped at 2 living).
+
+A result banner is shown. If you have fewer than 5 coins, the well refuses the toss.
+
+### The Well Dweller
+An original crawling wraith — long wet black hair hiding the face, a grey-white funerary shroud with a stone-stained hem, jerky start-stop movement. It is not a likeness of any film character and has no other name.
+- **80 HP**, slow (chase 38), 16 damage, heavy knock resist.
+- Spawns from the well on its own timer (~32s first, then ~48–70s if none are alive) and can also be called by a coin toss.
+- A 200px aura drains Sanity (stronger inside 80px; halved while hidden).
+- Better drop table than common servants (25% mirrors, 30% coins).
+
+### Secret Doors
+Only three rooms hide a passage into an adjacent wing, each opened by searching a curious item:
+- **Chapel of St. Ladislaus:** an iron candelabra bolted slightly off-true opens a short cut into the Great Hall.
+- **Torture Gallery:** a yellowed skull in a loose stone opens a "bone stair" down toward the Chapel.
+- **Great Hall:** a faded portrait hanging a finger's width from the wall slides aside a passage into the North Gate Court.
+
+A thin masonry crack and a faint glow hint at the item. When triggered, the wall grinds and sinks with a scrape, the camera shakes, and the open tiles appear on the minimap in pale green.
 
 ### Health
 100 HP. Monster strikes deal damage, with a short invulnerability window and knockback. Braziers mend +4 HP/s. Reaching 0 HP ends the run with a monster-specific death line.
@@ -84,7 +119,7 @@ Designed for two-thumb portrait phone play (`touch-action: none`, multi-touch po
 | **MIRROR** | Above ATTACK | Freezes the Countess with the best mirror held. The subtitle shows that mirror's seconds. |
 | **FLARE** | Diagonal | 20% oil; stuns her if close, scorches nearby servants. |
 | **DOUSE** | Top of cluster | Lantern on/off. |
-| **HUD** | Top | Ledger pages, stealth state, weapon (+ bolts), Health/Sanity/Oil bars, mirror inventory chips, minimap (pages gold, gate, you; she appears only when hunting you or frozen), sound/pause. |
+| **HUD** | Top | Ledger pages, stealth state, weapon (+ bolts), **Coins**, Health/Sanity/Oil bars, mirror inventory chips, minimap (pages gold, gate, you; she appears only when hunting you or frozen), sound/pause. |
 
 *(Keyboard: `WASD`/Arrows move, `Space`/`J` attack, `E` act, `R` mirror, `F` douse, `Q` flare, `Esc` pause.)*
 
@@ -92,7 +127,7 @@ Designed for two-thumb portrait phone play (`touch-action: none`, multi-touch po
 
 ## 5. Campaign: Csejte (Čachtice) Castle
 
-**v0.3 playable map: "The Castle Wings"**, one continuous level made of six wings:
+**v0.4 playable map: "The Castle Wings"**, one continuous level made of six wings:
 - **Outer Ward:** the start. Cobbled courtyard, crates, a well, braziers.
 - **Chapel of St. Ladislaus:** pews, altar, stained glass.
 - **Kitchens & Cellars:** tables, barrels, a cauldron; a cellar stair leads up to the North Court.
@@ -100,7 +135,7 @@ Designed for two-thumb portrait phone play (`touch-action: none`, multi-touch po
 - **Torture Gallery:** cages and racks; holds the only Obsidian mirror.
 - **North Gate Court:** statues and the sealed North Gate exit.
 
-The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 14 mirrors, 8 bolt bundles and 14 monster spawn points.
+The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 5 placed mirrors (3 Cracked, 1 Silver, 1 Obsidian), 8 bolt bundles, 14 monster spawn points, one well in the Outer Ward, and 3 secret doors.
 
 Future chapters (design targets): the Silver Cisterns & Bathhouse (steam halves lantern range), the Iron Undercroft (pressure plates) and the Brick-Walled Tower finale.
 
