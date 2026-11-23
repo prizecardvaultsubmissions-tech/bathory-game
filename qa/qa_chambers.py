@@ -75,7 +75,7 @@ try:
         W(600)
         q(CALM)
         # clear whatever came out so forced tests are deterministic
-        q("() => { const Q = window.__qa; Q.drops.length = 0; }")
+        q("() => { const Q = window.__qa; Q.drops.length = 0; Q.player.armor = 0; Q.player.speedBoost = 0; if (Q.mode === 'PICK') Q.pickWeapon('mace'); }")
 
         def crate_at(tx, ty):
             return q(f"window.__qa.breakables.findIndex(b => b.tx === {tx} && b.ty === {ty})")
