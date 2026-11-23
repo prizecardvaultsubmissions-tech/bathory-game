@@ -358,4 +358,56 @@ export class SoundEngine {
     this._noise(0.6, { type: "bandpass", freq: 800, q: 0.5, gain: 0.12, decay: 0.5, delay: 0.4 });
     this._tone(60, 1.0, { type: "sine", gain: 0.08, to: 35, delay: 0.2 });
   }
+
+  // ---- v0.5: crates, keys, puzzle chambers ----
+  playCrateHit() {
+    this._noise(0.12, { type: "bandpass", freq: 420, q: 1.4, gain: 0.3, decay: 0.25 });
+    this._tone(140, 0.1, { type: "triangle", gain: 0.08, to: 90 });
+  }
+  playCrateBreak() {
+    this._noise(0.4, { type: "bandpass", freq: 650, q: 0.7, gain: 0.36, decay: 0.3 });
+    this._noise(0.25, { type: "highpass", freq: 1800, gain: 0.12, decay: 0.2, delay: 0.04 });
+    this._tone(110, 0.25, { type: "triangle", gain: 0.1, to: 55 });
+  }
+  playSlime() {
+    this._tone(220, 0.25, { type: "sine", gain: 0.12, to: 90 });
+    this._noise(0.3, { type: "lowpass", freq: 400, gain: 0.18, decay: 0.4, delay: 0.05 });
+  }
+  playArmor() {
+    this._tone(660, 0.18, { type: "square", gain: 0.05 });
+    this._tone(990, 0.3, { type: "triangle", gain: 0.06, delay: 0.08 });
+  }
+  playKey() {
+    [784, 988, 1175, 1568].forEach((f, i) => this._tone(f, 0.5, { type: "triangle", gain: 0.07, delay: i * 0.09 }));
+    this._tone(98, 1.2, { type: "sine", gain: 0.1, to: 65 });
+  }
+  playUnlock() {
+    this._noise(0.08, { type: "highpass", freq: 2500, gain: 0.2, decay: 0.2 });
+    this._tone(320, 0.12, { type: "square", gain: 0.06, delay: 0.1 });
+    this._noise(1.0, { type: "lowpass", freq: 420, gain: 0.22, decay: 0.7, delay: 0.25 });
+  }
+  playDoorSlam() {
+    this._noise(0.6, { type: "lowpass", freq: 260, gain: 0.45, decay: 0.35 });
+    this._tone(55, 0.7, { type: "sine", gain: 0.2, to: 32 });
+  }
+  playCandle(good = true) {
+    this._noise(0.2, { type: "bandpass", freq: 1500, q: 0.8, gain: 0.12, decay: 0.4 });
+    if (good) this._tone(523 + Math.random() * 40, 0.5, { type: "sine", gain: 0.06, delay: 0.05 });
+  }
+  playSnuff() {
+    this._noise(0.7, { type: "highpass", freq: 900, gain: 0.2, decay: 0.5 });
+    this._tone(300, 0.6, { type: "sawtooth", gain: 0.05, to: 80 });
+  }
+  playPlate() {
+    this._tone(180, 0.18, { type: "square", gain: 0.07, to: 120 });
+    this._noise(0.2, { type: "lowpass", freq: 600, gain: 0.16, decay: 0.3 });
+  }
+  playGrind() {
+    this._noise(0.9, { type: "lowpass", freq: 220, q: 2, gain: 0.22, decay: 0.9 });
+    this._tone(42 + Math.random() * 6, 0.9, { type: "sawtooth", gain: 0.035 });
+  }
+  playSolve() {
+    [392, 494, 587, 784].forEach((f, i) => this._tone(f, 0.7, { type: "triangle", gain: 0.08, delay: i * 0.12 }));
+    this._noise(1.2, { type: "lowpass", freq: 500, gain: 0.2, decay: 0.8, delay: 0.3 });
+  }
 }

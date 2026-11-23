@@ -4,7 +4,10 @@ export const MONSTER_TYPES = {
   ghoul: { key: "ghoul", name: "Servant Ghoul", hp: 46, speed: 40, chaseSpeed: 66, dmg: 12, reach: 22, windup: 0.5, cooldown: 1.3, sight: 300, radius: 13, knockResist: 1 },
   maiden: { key: "maiden", name: "Blood Maiden", hp: 28, speed: 60, chaseSpeed: 132, dmg: 9, reach: 18, windup: 0.28, cooldown: 0.95, sight: 340, radius: 11, knockResist: 0.8 },
   bats: { key: "bats", name: "Bat Swarm", hp: 20, speed: 70, chaseSpeed: 108, dmg: 5, reach: 20, windup: 0.18, cooldown: 0.75, sight: 380, radius: 13, knockResist: 1.4, drainsOil: true },
-  dweller: { key: "dweller", name: "Well Dweller", hp: 80, speed: 22, chaseSpeed: 38, dmg: 16, reach: 24, windup: 0.7, cooldown: 1.6, sight: 280, radius: 13, knockResist: 1.35, aura: 200 }
+  dweller: { key: "dweller", name: "Well Dweller", hp: 80, speed: 22, chaseSpeed: 38, dmg: 16, reach: 24, windup: 0.7, cooldown: 1.6, sight: 280, radius: 13, knockResist: 1.35, aura: 200 },
+  // Crate slimes (v0.5): bouncy, split once into two minis on death.
+  slime: { key: "slime", name: "Crate Slime", hp: 25, speed: 46, chaseSpeed: 92, dmg: 7, reach: 18, windup: 0.32, cooldown: 1.0, sight: 300, radius: 12, knockResist: 0.9, hops: true },
+  slimelet: { key: "slimelet", name: "Mini Slime", hp: 9, speed: 60, chaseSpeed: 118, dmg: 4, reach: 14, windup: 0.22, cooldown: 0.8, sight: 300, radius: 8, knockResist: 0.6, hops: true }
 };
 
 
@@ -166,6 +169,11 @@ export class Monster {
         dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) };
         speed = T.speed;
       }
+    }
+    if (T.hops && speed) {
+      // Slimes move in springy hops: fast mid-air, stuck to the floor between bounces.
+      this.hop = ((this.hop || Math.random()) + dt * (this.state === "CHASE" ? 2.1 : 1.4)) % 1;
+      speed *= this.hop < 0.55 ? 1.75 : 0.08;
     }
     if (dir && speed) {
       const ox = this.x, oy = this.y;

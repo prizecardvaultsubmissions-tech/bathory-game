@@ -264,6 +264,19 @@ export function buildMonster(kind, T, psx) {
     rig.torso = body;
     rig.hideEyes = true;
     rig.eyeY = 0.55; rig.eyeZ = 0.85; rig.eyeColor = 0xc8e8d8; rig.barY = 0.95;
+  } else if (kind === "slime" || kind === "slimelet") {
+    // Original crate slime: a quivering low-poly blob of clotted red with a sickly green core.
+    const k = kind === "slime" ? 1 : 0.62;
+    const goo = M({ color: 0xa0101e, transparent: true, opacity: 0.88 });
+    const core = M({ color: 0x6aff5a, emissive: 0x1f7a14 });
+    const blob = pivot(body, 0, 0, 0);
+    const shell = add(blob, new THREE.IcosahedronGeometry(0.42 * k, 0), goo, 0, 0.36 * k, 0);
+    shell.scale.set(1.15, 0.82, 1.15);
+    add(blob, new THREE.IcosahedronGeometry(0.17 * k, 0), core, 0, 0.36 * k, 0.04);
+    for (const [sx, sz] of [[-0.3, 0.18], [0.28, -0.22], [0.05, -0.34]]) add(blob, new THREE.IcosahedronGeometry(0.1 * k, 0), goo, sx * k, 0.08 * k, sz * k);
+    rig.blob = blob;
+    rig.slimeK = k;
+    rig.eyeY = 0.5 * k; rig.eyeZ = 0.36 * k; rig.eyeColor = 0xd8ff6a; rig.barY = 1.05 * k + 0.2;
   } else {
     const fur = M({ color: 0x2a1c24 });
     const wing = M({ color: 0x4a2030, side: THREE.DoubleSide });

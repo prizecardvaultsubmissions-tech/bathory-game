@@ -638,8 +638,8 @@ h2 {
 .hud-actions { flex-direction: column; align-items: flex-end; gap: 6px; }
 .hud-action-row { display: flex; gap: 6px; }
 #minimap {
-  width: 87px;
-  height: 69px;
+  width: 80px;
+  height: 80px;
   image-rendering: pixelated;
   border: 1px solid rgba(201, 162, 77, 0.6);
   border-radius: 4px;
@@ -780,3 +780,35 @@ h2 {
 .boon-banner.curse .boon-title { color: #9bb6d0; }
 .boon-banner.dweller { border-color: #c8c8d0; box-shadow: 0 0 22px rgba(180, 190, 200, 0.35); }
 .boon-banner.dweller .boon-title { color: #e8e6e0; }
+
+/* v0.5 kills, keys, armor, puzzle chambers */
+.kill-pill { font-family: "Courier New", monospace; font-size: 11px; gap: 4px; border-color: rgba(196, 18, 48, 0.55); }
+.kill-glyph { color: #ff6981; }
+.key-slots { display: inline-flex; gap: 2px; }
+.key-slot { font-size: 9px; font-weight: bold; padding: 0 3px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.25); }
+.key-slot.held { color: #1a1004; background: linear-gradient(180deg, #ffe08a, #c9a24d); border-color: #ffe08a; box-shadow: 0 0 8px rgba(255, 216, 106, 0.8); }
+.key-slot.used { color: #7dff9a; border-color: rgba(125, 255, 154, 0.5); }
+.key-slot.bump { animation: chipBump 0.6s ease; }
+.bar-fill.armor { background: linear-gradient(90deg, #4a6a8a, #b8d4ee); }
+.puzzle-hud {
+  position: absolute; left: 50%; top: calc(150px + var(--safe-top)); transform: translateX(-50%);
+  z-index: 11; min-width: 230px; max-width: 88%; text-align: center;
+  background: rgba(12, 8, 10, 0.88); border: 1.5px solid var(--gold); border-radius: 10px; padding: 6px 12px 8px;
+  pointer-events: none;
+}
+.puzzle-hud.crush { border-color: #c41230; box-shadow: 0 0 18px rgba(196, 18, 48, 0.35); }
+.puzzle-hud.urgent { animation: urgentPulse 0.6s infinite alternate; }
+@keyframes urgentPulse { from { box-shadow: 0 0 6px rgba(255, 30, 60, 0.3); } to { box-shadow: 0 0 26px rgba(255, 30, 60, 0.9); } }
+.puzzle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.puzzle-title { font-family: "Courier New", monospace; font-size: 12px; letter-spacing: 0.14em; color: var(--gold-bright); }
+.puzzle-hud.crush .puzzle-title { color: #ff6981; }
+.puzzle-info { font-size: 12px; color: var(--bone); margin: 3px 0 5px; }
+.riddle-btn { pointer-events: auto; font-family: "Courier New", monospace; font-size: 10px; letter-spacing: 0.1em; color: #1a1004; background: linear-gradient(180deg, #ffe08a, #c9a24d); border: none; border-radius: 5px; padding: 4px 8px; }
+#puzzle-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #c9a24d, #ffe08a); transition: width 0.2s; }
+.puzzle-hud.crush #puzzle-fill { background: linear-gradient(90deg, #6a0010, #ff3050); }
+.lore-body.riddle { white-space: pre-line; font-style: italic; font-size: 15px; line-height: 1.55; color: #f6e7c8; }
+.boon-banner.key { border-color: #ffd86a; box-shadow: 0 0 26px rgba(255, 216, 106, 0.45); }
+.boon-banner.key .boon-title { color: #ffd86a; }
+.token-option.current { opacity: 0.45; }
+.token-grid .weapon-option { padding: 8px; }
+.boon-banner.low { top: calc(232px + var(--safe-top)); }

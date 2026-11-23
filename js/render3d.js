@@ -117,8 +117,71 @@ const CAM_OFFSETS = {
   kitchens: [2.2, 8.4, 6.6],
   hall: [-2.2, 9.0, 6.2],
   torture: [1.8, 8.0, 6.8],
-  north: [2.2, 8.2, 6.8]
+  north: [2.2, 8.2, 6.8],
+  candles: [0.0, 12.0, 8.4], // fixed, framed on the chamber centre
+  crush: [0.0, 12.0, 7.6],
+  doorway: [0.0, 7.4, -5.6] // looking south at the sealed chamber doors
 };
+
+// Procedural glyphs carved on candle bases and pressure plates (no fonts needed).
+function glyphTexture(sym, color = "#ffd86a", bg = "#2a2018") {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  g.fillStyle = bg;
+  g.beginPath(); g.arc(32, 32, 31, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "rgba(255,216,106,0.55)"; g.lineWidth = 2;
+  g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 4; g.lineCap = "round"; g.lineJoin = "round";
+  const tri = (up, bar) => {
+    g.beginPath();
+    if (up) { g.moveTo(32, 12); g.lineTo(52, 48); g.lineTo(12, 48); } else { g.moveTo(32, 52); g.lineTo(52, 16); g.lineTo(12, 16); }
+    g.closePath(); g.stroke();
+    if (bar) { g.beginPath(); g.moveTo(16, 32 + (up ? 4 : -4)); g.lineTo(48, 32 + (up ? 4 : -4)); g.stroke(); }
+  };
+  switch (sym) {
+    case "sun":
+      g.beginPath(); g.arc(32, 32, 9, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(32 + Math.cos(a) * 14, 32 + Math.sin(a) * 14); g.lineTo(32 + Math.cos(a) * 22, 32 + Math.sin(a) * 22); g.stroke(); }
+      break;
+    case "moon":
+      g.beginPath(); g.arc(32, 32, 18, 0, Math.PI * 2); g.fill();
+      g.fillStyle = bg; g.beginPath(); g.arc(41, 27, 16, 0, Math.PI * 2); g.fill();
+      break;
+    case "bell":
+      g.beginPath(); g.moveTo(18, 44); g.quadraticCurveTo(20, 16, 32, 15); g.quadraticCurveTo(44, 16, 46, 44); g.closePath(); g.fill();
+      g.fillRect(14, 43, 36, 4); g.beginPath(); g.arc(32, 50, 4, 0, Math.PI * 2); g.fill();
+      break;
+    case "rose":
+      for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5 - Math.PI / 2; g.beginPath(); g.arc(32 + Math.cos(a) * 9, 28 + Math.sin(a) * 9, 7, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = bg; g.beginPath(); g.arc(32, 28, 4, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(32, 38); g.lineTo(32, 54); g.stroke();
+      break;
+    case "key":
+      g.beginPath(); g.arc(20, 32, 8, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(28, 32); g.lineTo(52, 32); g.moveTo(46, 32); g.lineTo(46, 41); g.moveTo(52, 32); g.lineTo(52, 40); g.stroke();
+      break;
+    case "crow":
+      g.beginPath(); g.moveTo(10, 26); g.quadraticCurveTo(22, 22, 32, 36); g.quadraticCurveTo(42, 22, 54, 26); g.quadraticCurveTo(44, 30, 32, 46); g.quadraticCurveTo(20, 30, 10, 26); g.fill();
+      break;
+    case "skull":
+      g.beginPath(); g.arc(32, 28, 15, 0, Math.PI * 2); g.fill(); g.fillRect(24, 36, 16, 12);
+      g.fillStyle = bg; g.beginPath(); g.arc(26, 28, 4, 0, Math.PI * 2); g.arc(38, 28, 4, 0, Math.PI * 2); g.fill();
+      g.fillRect(29, 41, 2, 7); g.fillRect(34, 41, 2, 7);
+      break;
+    case "fire": tri(true, false); break;
+    case "water": tri(false, false); break;
+    case "air": tri(true, true); break;
+    case "earth": tri(false, true); break;
+    case "I": case "II":
+      g.font = "bold 30px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(sym, 32, 34);
+      break;
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  return t;
+}
 
 const PARTICLES = 320;
 
@@ -242,6 +305,7 @@ export class Renderer3D {
     for (const rig of this.dropRigs.values()) this.scene.remove(rig.root);
     this.dropRigs.clear();
     if (this.secretRigs) for (const r of this.secretRigs) { r.wall.position.y = 0; r.open = 0; }
+    if (this.doorRigs) for (const r of this.doorRigs) { r.open = 0; r.group.position.y = 0; }
     this.snapCam = true;
   }
 
@@ -312,11 +376,13 @@ export class Renderer3D {
     const secretSet = new Set();
     if (level.secrets) for (const d of level.secrets) for (const [tx, ty] of d.tiles) secretSet.add(`${tx},${ty}`);
     this.secretSet = secretSet;
+    const doorSet = new Set();
+    for (const lr of (level.lockedRooms || [])) doorSet.add(`${lr.door[0]},${lr.door[1]}`);
 
     const wallTiles = [];
     for (let ty = 0; ty < level.rows; ty++) {
       for (let tx = 0; tx < level.cols; tx++) {
-        if (secretSet.has(`${tx},${ty}`)) continue;
+        if (secretSet.has(`${tx},${ty}`) || doorSet.has(`${tx},${ty}`)) continue;
         if (level.grid[ty][tx] !== 1) continue;
         let touches = false;
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isOpen(tx + dx, ty + dy)) touches = true;
@@ -371,6 +437,8 @@ export class Renderer3D {
       for (let tx = 1; tx < level.cols - 1; tx++) {
         if (!isFloor(tx, ty) || special.has(`${tx},${ty}`)) continue;
         if (level.grid[ty - 1][tx] !== 1) continue;
+        const rr = roomAt(level, tx, ty);
+        if (rr && rr.sealed) continue;
         if (rnd() < 0.22) {
           const c = tileCenter(tx, ty);
           const n = 2 + Math.floor(rnd() * 3);
@@ -580,6 +648,9 @@ export class Renderer3D {
       this.wellGroup.add(mist);
       scene.add(this.wellGroup);
     }
+
+    this._buildBreakables(level, woodMat, ironMat);
+    this._buildChambers(level, wallSide, wallTop, woodMat, ironMat, goldMat, stoneMat);
 
     // ---------- Iron alcoves ----------
     const innerMat = this._mat("inner", { color: 0x120a0e });
@@ -895,6 +966,21 @@ export class Renderer3D {
       else if (f.type === "burn") this._emit(x, 1.0, z, 2, 0xff8a2a, 0.6, 1.8, -2, 0.4);
       else if (f.type === "pickup") this._emit(x, 1.0, z, 18, f.color ?? 0xe7c873, 1.6, 2.4, 2, 0.8);
       else if (f.type === "heal") this._emit(x, 0.5, z, 2, 0xff6a6a, 0.4, 1.6, -1, 0.6);
+      else if (f.type === "splinter") {
+        this._emit(x, 0.8, z, f.n ?? 12, 0xb07a40, f.big ? 5.5 : 3.0, f.big ? 4.0 : 2.6, 9, f.big ? 1.1 : 0.55);
+        if (f.big) {
+          this._emit(x, 0.6, z, 30, 0x6a4420, 3.6, 3.2, 8, 1.0);
+          this._emit(x, 0.9, z, 16, 0xffd27a, 2.4, 2.5, 8, 0.6);
+          this.shockRing.position.set(x, 0.05, z);
+          this.shockRing.material.color.setHex(0xc9a24d);
+          this.shockRing.visible = true;
+          this.shockLife = 0.7;
+        }
+      }
+      else if (f.type === "slime") {
+        this._emit(x, 0.4, z, 26, 0xb0101e, 2.6, 2.6, 9, 0.7);
+        this._emit(x, 0.4, z, 10, 0x6aff5a, 1.6, 2.0, 7, 0.6);
+      }
       else if (f.type === "shatter") {
         this._emit(x, 1.8, z, 60, f.color ?? 0xdff0ff, 6, 3.5, 7, 1.0);
         this._emit(x, 1.6, z, 30, 0xffffff, 3, 1.5, 3, 0.6);
@@ -1057,6 +1143,12 @@ export class Renderer3D {
         }
         rig.body.rotation.x = (hurt ? 0.5 : windup ? 0.45 : 0.72) + Math.sin(t * 9 + m.id) * 0.03;
         rig.body.position.y = (m.lurchPause > 0 ? 0.02 : 0) + (windup ? 0.12 : 0);
+      } else if (rig.blob) {
+        const hop = m.hop || 0;
+        const air = hop < 0.55 && !m.dead && m.state !== "RISE" ? Math.sin((hop / 0.55) * Math.PI) : 0;
+        const squash = windup ? 0.7 : 1 - Math.max(0, Math.sin(((hop - 0.55) / 0.45) * Math.PI)) * 0.25 * (hop >= 0.55 ? 1 : 0);
+        rig.blob.position.y = air * 0.45 * rig.slimeK;
+        rig.blob.scale.set(1 + (1 - squash) * 0.8 + Math.sin(t * 7 + m.id) * 0.04, squash + air * 0.15, 1 + (1 - squash) * 0.8);
       } else {
         rig.bats.forEach((b) => {
           const a = t * 3 + b.phase + m.id;
@@ -1094,6 +1186,8 @@ export class Renderer3D {
     this._syncDrops(drops, t);
     this._updateSecrets(level, dt);
     this._updateWell(level, t, fx);
+    this._syncBreakables(level, dt);
+    this._updateChambers(level, dt, t);
     if (player && speedBoost > 0 && mode === "PLAYING") this._speedTrail(player, dt, t);
 
     this.bigFlames.material.size = 0.8 + Math.sin(t * 17) * 0.06;
@@ -1295,17 +1389,25 @@ export class Renderer3D {
       SNAP.value.copy(this.baseSnap);
       this.postMat.uniforms.uGlitch.value = 0;
     } else {
-      const room = roomAt(level, Math.floor(focus.x / TILE), Math.floor(focus.z / TILE));
+      const ftx = Math.floor(focus.x / TILE), fty = Math.floor(focus.z / TILE);
+      const room = roomAt(level, ftx, fty);
       if (room) this.lastRoomKey = room.key;
+      const nearDoor = (level.lockedRooms || []).some((lr) => Math.abs(ftx - lr.door[0]) <= 1 && fty >= lr.door[1] - 3 && fty <= lr.door[1] - 1);
+      if (nearDoor) this.lastRoomKey = "doorway";
+      else if (!room && this.lastRoomKey === "doorway") this.lastRoomKey = fty >= 46 ? this.lastRoomKey : "ward";
       const o = CAM_OFFSETS[this.lastRoomKey];
       const off = player.hidden ? new THREE.Vector3(2.0, 4.8, 3.8) : new THREE.Vector3(o[0], o[1], o[2]);
       if (this.camera.aspect < 0.8) off.multiplyScalar(1.28);
       this.camOffset.lerp(off, Math.min(1, dt * 2.2));
-      const desired = focus.clone().add(this.camOffset);
-      const look = focus.clone().add(new THREE.Vector3(0, 1.0, -0.6));
+      // Sealed puzzle chambers use a fixed camera framed on the room centre.
+      const camF = room && room.sealed
+        ? new THREE.Vector3(((room.x0 + room.x1 + 1) / 2) * TILE, 0, ((room.y0 + room.y1 + 1) / 2) * TILE)
+        : focus;
+      const desired = camF.clone().add(this.camOffset);
+      const look = camF.clone().add(new THREE.Vector3(0, 1.0, this.lastRoomKey === "doorway" ? 0.9 : -0.6));
       if (this.snapCam) {
         this.camOffset.copy(off);
-        this.camPos.copy(focus).add(off);
+        this.camPos.copy(camF).add(off);
         this.camLook.copy(look);
         this.snapCam = false;
       } else {
@@ -1338,6 +1440,247 @@ export class Renderer3D {
   }
 
 
+
+  _buildBreakables(level, woodMat, ironMat) {
+    const list = level.breakables || [];
+    const crates = list.filter((b) => b.type === "crate");
+    const barrels = list.filter((b) => b.type === "barrel");
+    const plank = this._mat("crate-plank", { map: this.T.wood, emissive: 0x120a04 });
+    this.crateBig = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 1.0, 1.2), plank, Math.max(1, crates.length));
+    this.crateTop = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.7, 0.8), plank, Math.max(1, crates.length));
+    this.crateBand = new THREE.InstancedMesh(new THREE.BoxGeometry(1.26, 0.1, 1.26), ironMat, Math.max(1, crates.length));
+    this.barrelBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), woodMat, Math.max(1, barrels.length));
+    this.barrelBand = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 8), ironMat, Math.max(1, barrels.length * 2));
+    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand]) {
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.scene.add(im);
+    }
+    const rnd = seeded(77);
+    this.brkMeta = list.map((b) => ({ rot: rnd() * Math.PI, top: rnd() * Math.PI, idx: (b.type === "crate" ? crates : barrels).indexOf(b) }));
+    this._brkObj = new THREE.Object3D();
+    this._syncBreakables(level, 0);
+  }
+
+  _syncBreakables(level, dt) {
+    if (!this.crateBig || !level || !level.breakables) return;
+    const o = this._brkObj;
+    const put = (im, i, x, y, z, ry, sc, tilt = 0) => {
+      o.position.set(x, y, z);
+      o.rotation.set(tilt, ry, tilt * 0.6);
+      o.scale.setScalar(sc);
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+    };
+    level.breakables.forEach((b, k) => {
+      const meta = this.brkMeta[k];
+      if (!meta) return;
+      if (b.hitT > 0) b.hitT = Math.max(0, b.hitT - dt);
+      const c = tileCenter(b.tx, b.ty);
+      const sc = b.broken ? 0.0001 : 1;
+      const wob = b.hitT > 0 ? Math.sin(b.hitT * 60) * 0.12 * (b.hitT / 0.3) : 0;
+      const dmgTilt = b.broken ? 0 : (1 - b.hp / b.maxHp) * 0.12;
+      const i = meta.idx;
+      if (b.type === "crate") {
+        put(this.crateBig, i, c.x, 0.5 * sc, c.z, meta.rot + wob, sc, dmgTilt);
+        put(this.crateTop, i, c.x + 0.3 * sc, 1.35 * sc, c.z - 0.1 * sc, meta.top - wob, sc, -dmgTilt * 2);
+        put(this.crateBand, i, c.x, 0.5 * sc, c.z, meta.rot + wob, sc, dmgTilt);
+      } else {
+        put(this.barrelBody, i, c.x, 0.55 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
+        put(this.barrelBand, i * 2, c.x, 0.25 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
+        put(this.barrelBand, i * 2 + 1, c.x, 0.85 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
+      }
+    });
+    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand]) im.instanceMatrix.needsUpdate = true;
+  }
+
+  _buildChambers(level, wallSide, wallTop, woodMat, ironMat, goldMat, stoneMat) {
+    this.doorRigs = [];
+    this.candleRigs = [];
+    this.plateRigs = [];
+    this.crushSlabs = null;
+    for (const lr of (level.lockedRooms || [])) {
+      // Ornate locked door (its own block so it can sink away)
+      const [dx, dy] = lr.door;
+      const c = tileCenter(dx, dy);
+      const group = new THREE.Group();
+      const block = new THREE.Mesh(new THREE.BoxGeometry(TILE, WALL_H, TILE), [wallSide, wallSide, wallTop, wallTop, wallSide, wallSide]);
+      block.position.set(c.x, WALL_H / 2, c.z);
+      group.add(block);
+      const nz = c.z - TILE / 2 - 0.02; // north face, toward the Outer Ward
+      const plank = this._mat("door-wood", { map: this.T.wood, color: 0x8a5a3a, emissive: 0x140804 });
+      const door = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.12), plank);
+      door.position.set(c.x, 1.25, nz);
+      group.add(door);
+      for (const y of [0.5, 1.25, 2.0]) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.1, 0.06), ironMat);
+        band.position.set(c.x, y, nz - 0.07);
+        group.add(band);
+      }
+      const arch = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.24, 0.2), goldMat);
+      arch.position.set(c.x, 2.62, nz - 0.04);
+      group.add(arch);
+      const tint = lr.keyNo === 2 ? 0xff3050 : 0xffd86a;
+      const plateTex = glyphTexture(lr.numeral, lr.keyNo === 2 ? "#ff6981" : "#ffd86a", "#1a0e08");
+      const numPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), new THREE.MeshBasicMaterial({ map: plateTex, transparent: true }));
+      numPlate.position.set(c.x, 2.15, nz - 0.1);
+      numPlate.rotation.y = Math.PI;
+      group.add(numPlate);
+      const lock = new THREE.Group();
+      const lockMat = this._mat(`padlock-${lr.keyNo}`, { color: 0xc9a24d, emissive: 0x4a3008 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.32, 0.14), lockMat);
+      const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 4, 8, Math.PI), ironMat);
+      shackle.position.y = 0.16;
+      lock.add(body, shackle);
+      lock.position.set(c.x, 1.15, nz - 0.2);
+      group.add(lock);
+      const glow = new THREE.Sprite(this.glowMat(tint, 0.55));
+      glow.position.set(c.x, 1.3, nz - 0.5);
+      glow.scale.set(1.8, 2.2, 1);
+      group.add(glow);
+      this.scene.add(group);
+      this.doorRigs.push({ key: lr.key, group, lock, glow, open: 0 });
+
+      if (lr.key === "candles") {
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x8b0018, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+        const rc = tileCenter(13, 51);
+        for (const [r0, r1] of [[4.6, 4.8], [1.5, 1.62]]) {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 28), ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(rc.x, 0.02, rc.z);
+          this.scene.add(ring);
+        }
+        const wax = this._mat("puz-wax", { color: 0xf0e4c8, emissive: 0x3a2a10 });
+        for (const it of lr.items) {
+          const g = new THREE.Group();
+          const ic = tileCenter(it.tx, it.ty);
+          g.position.set(ic.x, 0, ic.z);
+          const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 0.9, 6), ironMat);
+          stand.position.y = 0.45;
+          const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.2, 0.08, 8), goldMat);
+          dish.position.y = 0.92;
+          const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.55, 8), wax);
+          candle.position.y = 1.23;
+          const glyph = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), new THREE.MeshBasicMaterial({ map: glyphTexture(it.sym), transparent: true }));
+          glyph.rotation.x = -Math.PI / 2;
+          glyph.position.set(0, 0.03, 0.95);
+          const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.T.flame, color: 0xffd08a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+          flame.position.y = 1.66;
+          flame.scale.set(0.42, 0.62, 1);
+          const halo = new THREE.Sprite(this.glowMat(0xff9a40, 0.7));
+          halo.position.y = 1.6;
+          halo.scale.set(1.8, 1.8, 1);
+          g.add(stand, dish, candle, glyph, flame, halo);
+          this.scene.add(g);
+          this.candleRigs.push({ idx: it.i, flame, halo });
+        }
+        // No extra real lights (they'd cost every material); a big additive glow instead.
+        this.candleGlow = new THREE.Sprite(this.glowMat(0xff8a30, 0));
+        this.candleGlow.position.set(rc.x, 1.2, rc.z);
+        this.candleGlow.scale.set(12, 12, 1);
+        this.scene.add(this.candleGlow);
+      } else if (lr.key === "crush") {
+        // Two spiked stone slabs that slide in from the east and west.
+        const r = lr.room;
+        const depth = (r.y1 - r.y0 + 1) * TILE;
+        const width = 4 * TILE;
+        const spikeMat = this._mat("crush-spike", { color: 0x8a8690, emissive: 0x1a0a0a });
+        const mk = (side) => {
+          const g = new THREE.Group();
+          const slab = new THREE.Mesh(new THREE.BoxGeometry(width, WALL_H, depth), [wallSide, wallSide, wallTop, wallTop, wallSide, wallSide]);
+          slab.position.set(-side * width / 2, WALL_H / 2, 0);
+          slab.castShadow = true;
+          g.add(slab);
+          const stain = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.2, depth * 0.9), this._mat("crush-stain", { color: 0x4a0010 }));
+          stain.position.set(side * 0.02, 0.6, 0);
+          g.add(stain);
+          const geos = [];
+          const m4 = new THREE.Matrix4();
+          for (let row = 0; row < 3; row++) {
+            for (let k = 0; k < 7; k++) {
+              const geo = new THREE.ConeGeometry(0.13, 0.55, 4);
+              m4.makeRotationZ(side * -Math.PI / 2).setPosition(side * 0.26, 0.6 + row * 0.85, -depth / 2 + 1.3 + k * (depth - 2.6) / 6);
+              geo.applyMatrix4(m4);
+              geos.push(geo);
+            }
+          }
+          g.add(new THREE.Mesh(mergeGeometries(geos), spikeMat));
+          this.scene.add(g);
+          return g;
+        };
+        const zc = (r.y0 + (r.y1 - r.y0 + 1) / 2) * TILE;
+        const left = mk(1), right = mk(-1);
+        this.crushSlabs = { left, right, x0: r.x0 * TILE, x1: (r.x1 + 1) * TILE, zc };
+        left.position.set(this.crushSlabs.x0, 0, zc);
+        right.position.set(this.crushSlabs.x1, 0, zc);
+        for (const it of lr.items) {
+          const g = new THREE.Group();
+          const ic = tileCenter(it.tx, it.ty);
+          g.position.set(ic.x, 0, ic.z);
+          const ped = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 1.1), stoneMat);
+          ped.position.y = 0.25;
+          const top = new THREE.Group();
+          const face = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: glyphTexture(it.sym, "#7ec8e8", "#1a1418"), transparent: true }));
+          face.rotation.x = -Math.PI / 2;
+          face.position.y = 0.52;
+          top.add(face);
+          const halo = new THREE.Sprite(this.glowMat(0x7ec8e8, 0.0));
+          halo.position.y = 0.9;
+          halo.scale.set(1.6, 1.6, 1);
+          g.add(ped, top, halo);
+          this.scene.add(g);
+          this.plateRigs.push({ idx: it.i, top, halo });
+        }
+        this.crushGlow = new THREE.Sprite(this.glowMat(0xff2040, 0));
+        this.crushGlow.position.set((r.x0 + r.x1 + 1) / 2 * TILE, 2.0, zc);
+        this.crushGlow.scale.set(10, 10, 1);
+        this.scene.add(this.crushGlow);
+      }
+    }
+  }
+
+  _updateChambers(level, dt, t) {
+    if (!level || !level.lockedRooms || !this.doorRigs) return;
+    for (const lr of level.lockedRooms) {
+      const rig = this.doorRigs.find((r) => r.key === lr.key);
+      if (rig) {
+        const target = lr.doorOpen ? 1 : 0;
+        rig.open += (target - rig.open) * Math.min(1, dt * 2.4);
+        rig.group.position.y = -WALL_H * rig.open;
+        rig.group.visible = rig.open < 0.985;
+        rig.lock.visible = !lr.unlocked;
+        rig.glow.material.opacity = lr.unlocked ? 0.15 : 0.4 + 0.2 * Math.sin(t * 3 + lr.keyNo);
+      }
+      if (lr.key === "candles") {
+        let lit = 0;
+        for (const c of this.candleRigs) {
+          const it = lr.items[c.idx];
+          const on = !!(it && it.lit);
+          c.flame.visible = on;
+          c.halo.visible = on;
+          if (on) {
+            lit++;
+            c.flame.scale.set(0.5 + Math.sin(t * 19 + c.idx) * 0.06, 0.75 + Math.sin(t * 23 + c.idx) * 0.1, 1);
+            c.halo.material.opacity = 0.6 + Math.sin(t * 11 + c.idx) * 0.12;
+          }
+        }
+        if (this.candleGlow) this.candleGlow.material.opacity = lit * 0.035;
+      } else if (lr.key === "crush" && this.crushSlabs) {
+        const inset = lr.wallInset * S;
+        const jitter = lr.active ? Math.sin(t * 40) * 0.015 : 0;
+        this.crushSlabs.left.position.x = this.crushSlabs.x0 + inset + jitter;
+        this.crushSlabs.right.position.x = this.crushSlabs.x1 - inset - jitter;
+        for (const p of this.plateRigs) {
+          const it = lr.items[p.idx];
+          const down = !!(it && it.pressed);
+          p.top.position.y = down ? -0.18 : 0;
+          p.halo.material.opacity = down ? 0.8 : 0.18 + 0.1 * Math.sin(t * 3 + p.idx);
+        }
+        if (this.crushGlow) this.crushGlow.material.opacity = lr.active ? 0.12 + Math.sin(t * 6) * 0.05 : 0;
+      }
+    }
+  }
 
   _updateSecrets(level, dt) {
     if (!this.secretRigs || !level || !level.secrets) return;
@@ -1400,6 +1743,60 @@ export class Renderer3D {
       }
       spin.add(bag, neck, tie);
       haloColor = 0xffe08a;
+    } else if (d.kind === "key") {
+      const iron = this._mat("key-iron", { color: 0x8a8070, emissive: 0x3a2a08 });
+      const gold = this._mat("key-gold", { color: 0xffd86a, emissive: 0x6a4a08 });
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 4, 8), gold);
+      bow.position.y = 0.62;
+      const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.62, 0.07), iron);
+      shaft.position.y = 0.2;
+      const t1 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.06), iron);
+      t1.position.set(0.1, -0.04, 0);
+      const t2 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.06, 0.06), iron);
+      t2.position.set(0.08, 0.08, 0);
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), this._mat(`key-gem-${d.keyNo}`, { color: d.keyNo === 2 ? 0xff3050 : 0x7ec8e8, emissive: d.keyNo === 2 ? 0x600010 : 0x103050 }));
+      gem.position.y = 0.62;
+      spin.add(bow, shaft, t1, t2, gem);
+      spin.scale.setScalar(1.4);
+      haloColor = 0xffd86a;
+    } else if (d.kind === "armor") {
+      const steel = this._mat("armor-steel", { color: 0xb8c4d0, emissive: 0x1a2430 });
+      const trim = this._mat("armor-trim", { color: 0xc9a24d, emissive: 0x2a1804 });
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.46, 0.14), steel);
+      plate.position.y = 0.3;
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.46, 0.06), trim);
+      ridge.position.set(0, 0.3, 0.08);
+      const sh1 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.2), steel);
+      sh1.position.set(-0.24, 0.5, 0);
+      const sh2 = sh1.clone();
+      sh2.position.x = 0.24;
+      spin.add(plate, ridge, sh1, sh2);
+      haloColor = 0x9fc4e8;
+    } else if (d.kind === "haste") {
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.34, 8), this._mat("haste-glass", { color: 0xe8ffb0, emissive: 0x3a5010, transparent: true, opacity: 0.8 }));
+      glass.position.y = 0.24;
+      const wingMat = this._mat("haste-wing", { color: 0xffe08a, emissive: 0x5a4008, side: THREE.DoubleSide });
+      for (const s of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), wingMat);
+        wing.position.set(0.2 * s, 0.34, 0);
+        wing.rotation.z = 0.5 * s;
+        spin.add(wing);
+      }
+      spin.add(glass);
+      haloColor = 0xd8ff8a;
+    } else if (d.kind === "token") {
+      const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 10), this._mat("token-coin", { color: 0x9a6ad8, emissive: 0x30104a }));
+      coin.rotation.x = Math.PI / 2;
+      coin.position.y = 0.32;
+      const bladeMat = this._mat("token-blade", { color: 0xeef2f8, emissive: 0x404858 });
+      for (const r of [-0.7, 0.7]) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.36, 0.04), bladeMat);
+        b.position.set(0, 0.32, 0.05);
+        b.rotation.z = r;
+        spin.add(b);
+      }
+      spin.add(coin);
+      haloColor = 0xb27bff;
     } else {
       const tier = MIRROR_TIERS[d.tier] || MIRROR_TIERS.cracked;
       const frameMat = this._mat(`mframe-${d.tier || "cracked"}`, { color: tier.color, emissive: d.tier === "obsidian" ? 0x3a1060 : 0x1a1408, side: THREE.DoubleSide });

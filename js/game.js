@@ -2,7 +2,7 @@ import { SoundEngine } from "./audio.js";
 import { CURSE_ALERTS, TITLE_WHISPERS } from "./lore.js";
 import {
   createLevel, hasLineOfSight, resolveCircleWallCollision, TILE_SIZE, Pathing, roomAt,
-  MIRROR_TIERS, MIRROR_ORDER, openSecret, isPassableTile
+  MIRROR_TIERS, MIRROR_ORDER, openSecret, isPassableTile, setDoor, PUZZLE_GLYPHS
 } from "./map.js";
 import { Renderer3D } from "./render3d.js";
 import { AI_STATE, CountessAI } from "./enemy.js";
@@ -41,6 +41,19 @@ const areaTitleEl = $("area-title");
 const boonBanner = $("boon-banner");
 const boonTitle = $("boon-title");
 const boonSub = $("boon-sub");
+const hudKillVal = $("hud-kill-val");
+const hudKeySlots = { 1: $("key-slot-1"), 2: $("key-slot-2") };
+const hudArmorBar = $("hud-armor-bar");
+const hudArmorVal = $("hud-armor-val");
+const puzzleHud = $("puzzle-hud");
+const puzzleTitle = $("puzzle-title");
+const puzzleInfo = $("puzzle-info");
+const puzzleFill = $("puzzle-fill");
+const btnRiddle = $("btn-riddle");
+const screenToken = $("screen-token");
+const tokenGrid = $("token-grid");
+const loreCloseBtn = $("btn-lore-close");
+const loreSeal = document.querySelector("#screen-lore .lore-seal");
 const minimap = $("minimap");
 const mm = minimap.getContext("2d");
 
@@ -107,6 +120,10 @@ let warnedCountessImmune = false;
 let freezeTier = null;
 let burnFxTimer = 0;
 let mmBase = null;
+let inPuzzle = null;      // the locked chamber you are sealed inside
+let keysAwarded = 0;      // 1 at 15 kills, 2 at 30 kills
+let grindTimer = 0;
+const KEY_KILLS = [15, 30];
 
 const hourNow = new Date().getHours();
 const isWitchingHour = hourNow >= 0 && hourNow < 3;
@@ -233,7 +250,8 @@ function startNewRun() {
     weapon: selectedWeapon, ammo: w.kind === "ranged" ? w.ammo : Infinity,
     attackCd: 0, attackAnim: 0, hurtAnim: 0, invuln: 0,
     mirrors: { cracked: 0, silver: 0, gilded: 0, obsidian: 0 },
-    coins: 0, speedBoost: 0, darkCurse: 0
+    coins: 0, speedBoost: 0, darkCurse: 0,
+    armor: 0, keys: { 1: null, 2: null }, hasTaper: false
   };
   countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour, pathing);
   monsters = [];
@@ -243,6 +261,8 @@ function startNewRun() {
   shake = 0; hurtFx = 0; elapsed = 0; flareFlash = 0; kills = 0; mirrorsUsed = 0;
   spawnTimer = 4; wellTimer = 32; boonTimer = 0; nearbyContext = null; lastRoomKey = null; freezeTier = null;
   warnedCountessImmune = false;
+  inPuzzle = null; keysAwarded = 0; grindTimer = 0;
+  if (puzzleHud) puzzleHud.classList.add("hidden");
   buildMinimapBase();
 
   hideAllScreens();
@@ -255,7 +275,7 @@ function startNewRun() {
 }
 
 function hideAllScreens() {
-  for (const s of [screenTitle, screenWeapon, screenHelp, screenLore, screenDeath, screenWin]) s.classList.add("hidden");
+  for (const s of [screenTitle, screenWeapon, screenHelp, screenLore, screenDeath, screenWin, screenToken]) if (s) s.classList.add("hidden");
   freezeBanner.classList.add("hidden");
   toastEl.classList.add("hidden");
   if (boonBanner) boonBanner.classList.add("hidden");
@@ -362,6 +382,9 @@ function triggerInteract() {
     sound.playPage();
     fx.push({ type: "pickup", x: p.x, y: p.y, color: 0xe7c873 });
     loreNum.textContent = p.lore.num;
+    loreBody.classList.remove("riddle");
+    if (loreSeal) loreSeal.textContent = "WAX SEAL BROKEN";
+    loreCloseBtn.textContent = "POCKET PAGE (+12% SANITY)";
     loreTitle.textContent = p.lore.title;
     loreBody.textContent = p.lore.body;
     if (p.lore.witchingPostscript && isWitchingHour) {
@@ -386,6 +409,12 @@ function triggerInteract() {
     tossWell();
   } else if (nearbyContext.type === "secret") {
     triggerSecret(nearbyContext.obj);
+  } else if (nearbyContext.type === "door") {
+    tryUnlock(nearbyContext.obj);
+  } else if (nearbyContext.type === "candle") {
+    lightCandle(nearbyContext.obj);
+  } else if (nearbyContext.type === "plate") {
+    pressPlate(nearbyContext.obj);
   }
 }
 
@@ -415,6 +444,9 @@ function tryAttack() {
   if (target) player.angle = Math.atan2(target.y - player.y, target.x - player.x);
   else if (dC < (ranged ? w.range : w.reach + 30) && hasLineOfSight(level, player.x, player.y, countess.x, countess.y)) {
     player.angle = Math.atan2(countess.y - player.y, countess.x - player.x);
+  } else {
+    const b = nearestBreakable(ranged ? Math.min(w.range, 260) : (w.reach || 52) + 30);
+    if (b) player.angle = Math.atan2(b.y - player.y, b.x - player.x);
   }
 
   player.attackAnim = 1;
@@ -452,6 +484,15 @@ function tryAttack() {
       if (m.dead) onMonsterKilled(m);
     }
   }
+  // Crates & barrels splinter under your blows
+  for (const b of level.breakables) {
+    if (b.broken) continue;
+    const d = Math.hypot(b.x - player.x, b.y - player.y);
+    if (d > reach + 22) continue;
+    const a = Math.atan2(b.y - player.y, b.x - player.x);
+    if (Math.abs(angDiff(a, player.angle)) > arc / 2 + 0.25 && d > 36) continue;
+    hitBreakable(b, player.weapon === "mace" ? 2 : 1);
+  }
   if (hitAny) {
     sound.playHit(player.weapon === "mace");
     shake = Math.max(shake, player.weapon === "mace" ? 0.7 : 0.35);
@@ -472,8 +513,21 @@ function tryAttack() {
 
 function onMonsterKilled(m, forcedKind = null, opts = {}) {
   kills += 1;
+  checkKeyDrops(m);
+  if (m.kind === "slime") {
+    // Splits once into two minis
+    for (const s of [-1, 1]) {
+      const a = Math.random() * Math.PI;
+      const mini = new Monster("slimelet", m.x + Math.cos(a) * 14 * s, m.y + Math.sin(a) * 14 * s);
+      mini.timer = 0.3;
+      resolveCircleWallCollision(level, mini, mini.radius, false);
+      monsters.push(mini);
+    }
+    fx.push({ type: "slime", x: m.x, y: m.y });
+    sound.playSlime();
+  }
   sound.playMonsterDie();
-  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : 0x9fb28a });
+  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : (m.kind === "slime" || m.kind === "slimelet") ? 0xb0101e : 0x9fb28a });
   const kind = forcedKind || rollDropKind(m);
   if (kind && kind !== "nothing") {
     const extra = { ...opts };
@@ -487,8 +541,106 @@ function onMonsterKilled(m, forcedKind = null, opts = {}) {
 const DROP_TABLE = {
   default: { nothing: 0.40, sanity: 0.25, coins: 0.23, mirror: 0.12 },
   ghoul:   { nothing: 0.30, sanity: 0.26, coins: 0.26, mirror: 0.18 },
-  dweller: { nothing: 0.20, sanity: 0.25, coins: 0.30, mirror: 0.25 }
+  dweller: { nothing: 0.20, sanity: 0.25, coins: 0.30, mirror: 0.25 },
+  slimelet: { nothing: 0.70, sanity: 0.12, coins: 0.15, mirror: 0.03 }
 };
+
+// What a smashed crate or barrel holds (v0.5)
+const CRATE_TABLE = { token: 0.20, armor: 0.32, haste: 0.22, slime: 0.26 };
+function rollCrateKind() {
+  const r = Math.random();
+  let acc = 0;
+  for (const [k, p] of Object.entries(CRATE_TABLE)) { acc += p; if (r < acc) return k; }
+  return "armor";
+}
+
+function nearestBreakable(range) {
+  let best = null, bd = range;
+  for (const b of level.breakables) {
+    if (b.broken) continue;
+    const d = Math.hypot(b.x - player.x, b.y - player.y);
+    if (d < bd && hasLineOfSight(level, player.x, player.y, b.x, b.y)) { bd = d; best = b; }
+  }
+  return best;
+}
+
+function hitBreakable(b, dmg = 1, forcedKind = null) {
+  if (!b || b.broken) return null;
+  b.hp -= dmg;
+  b.hitT = 0.3;
+  fx.push({ type: "splinter", x: b.x, y: b.y, n: 10 });
+  if (b.hp > 0) { sound.playCrateHit(); shake = Math.max(shake, 0.2); return null; }
+  return breakBreakable(b, forcedKind);
+}
+
+function breakBreakable(b, forcedKind = null) {
+  if (b.broken) return null;
+  b.broken = true;
+  b.hp = 0;
+  level.grid[b.ty][b.tx] = 0;
+  pathing.invalidate();
+  sound.playCrateBreak();
+  shake = Math.max(shake, 0.45);
+  fx.push({ type: "splinter", x: b.x, y: b.y, n: 34, big: true });
+  const kind = forcedKind || rollCrateKind();
+  if (kind === "slime") {
+    const m = new Monster("slime", b.x, b.y);
+    m.timer = 0.45;
+    monsters.push(m);
+    fx.push({ type: "slime", x: b.x, y: b.y });
+    sound.playSlime();
+    toast(`A slime oozes out of the ${b.type}!`, 2.4);
+  } else {
+    spawnDrop(kind, b.x, b.y);
+  }
+  return kind;
+}
+
+function checkKeyDrops(m) {
+  while (keysAwarded < KEY_KILLS.length && kills >= KEY_KILLS[keysAwarded]) {
+    keysAwarded += 1;
+    const n = keysAwarded;
+    spawnDrop("key", m.x, m.y, { keyNo: n });
+    sound.playKey();
+    shake = Math.max(shake, 0.5);
+    const lr = level.lockedRooms.find((r) => r.keyNo === n);
+    showBoon("key", n === 1 ? "THE FIRST KEY FALLS…" : "THE SECOND KEY FALLS…", `Iron Key ${n === 1 ? "I" : "II"} — it opens the ${lr ? lr.name : "sealed door"}.`, 4);
+  }
+}
+
+function swapWeapon(id) {
+  if (!WEAPONS[id] || !player) return;
+  const w = WEAPONS[id];
+  player.weapon = id;
+  player.ammo = w.kind === "ranged" ? w.ammo : Infinity;
+  player.attackCd = 0;
+  renderer3d.setWeapon(id);
+  fx.push({ type: "pickup", x: player.x, y: player.y, color: 0xb27bff });
+  toast(`You take up the ${w.name}.`, 2.4);
+  updateHud();
+}
+
+function openTokenPicker() {
+  if (!screenToken) return;
+  mode = "PICK";
+  attackHeld = false;
+  tokenGrid.innerHTML = WEAPON_ORDER.map((id) => {
+    const w = WEAPONS[id];
+    const cur = id === player.weapon;
+    return `<button class="weapon-option token-option${cur ? " current" : ""}" type="button" data-weapon="${id}" ${cur ? "disabled" : ""}>
+      <div class="weapon-top">${WEAPON_ICONS[id]}<div><div class="weapon-name">${w.name}</div><div class="weapon-special">${cur ? "IN HAND" : w.special}</div></div></div>
+    </button>`;
+  }).join("");
+  tokenGrid.querySelectorAll(".token-option:not([disabled])").forEach((el) => {
+    el.addEventListener("click", () => { closeTokenPicker(); swapWeapon(el.dataset.weapon); });
+  });
+  screenToken.classList.remove("hidden");
+}
+function closeTokenPicker() {
+  screenToken.classList.add("hidden");
+  if (mode === "PICK") mode = "PLAYING";
+}
+$("btn-token-keep").addEventListener("click", () => { closeTokenPicker(); toast("You keep your weapon.", 1.6); });
 
 function rollDropKind(m) {
   const table = (m && DROP_TABLE[m.kind]) ? DROP_TABLE[m.kind] : DROP_TABLE.default;
@@ -523,13 +675,14 @@ function spawnDrop(kind, x, y, opts = {}) {
     id: nextDropId++,
     kind,
     tier: opts.tier || (kind === "mirror" ? "cracked" : null),
-    amount: opts.amount || (kind === "coins" ? 8 : kind === "sanity" ? 24 : 0),
+    amount: opts.amount || (kind === "coins" ? 8 : kind === "sanity" ? 24 : kind === "armor" ? 35 : 0),
+    keyNo: opts.keyNo || 0,
     x, y,
     vx: Math.cos(ang) * spd,
     vy: Math.sin(ang) * spd,
     h: 0.95,
     vh: 4.4 + Math.random() * 1.1,
-    life: 20,
+    life: kind === "key" ? Infinity : 20,
     collected: false,
     remove: false
   };
@@ -558,6 +711,29 @@ function collectDrop(d) {
     fx.push({ type: "pickup", x: d.x, y: d.y, color: T.color });
     toast(`${T.name} dropped (${T.secs}s freeze)`, 2.6);
     renderMirrorHud(false, tier);
+  } else if (d.kind === "key") {
+    player.keys[d.keyNo] = "held";
+    sound.playKey();
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: 0xffd86a });
+    const lr = level.lockedRooms.find((r) => r.keyNo === d.keyNo);
+    toast(`Iron Key ${d.keyNo === 1 ? "I" : "II"} — opens the ${lr ? lr.name : "sealed door"} off the Outer Ward.`, 3.4);
+    const slot = hudKeySlots[d.keyNo];
+    if (slot) { slot.classList.remove("bump"); void slot.offsetWidth; slot.classList.add("bump"); }
+  } else if (d.kind === "armor") {
+    player.armor = Math.min(100, player.armor + d.amount);
+    sound.playArmor();
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: 0x9fc4e8 });
+    toast(`Armor plate — +${d.amount} armor`, 2.2);
+  } else if (d.kind === "haste") {
+    player.speedBoost = 15;
+    player.darkCurse = 0;
+    sound.playBoon();
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: 0xffe08a });
+    showBoon("boost", "SPEED BOOST", "A crate-cached tonic — your steps lighten for 15s.");
+  } else if (d.kind === "token") {
+    sound.playArmor();
+    fx.push({ type: "pickup", x: d.x, y: d.y, color: 0xb27bff });
+    openTokenPicker();
   }
 }
 
@@ -791,6 +967,23 @@ function updateHud() {
   if (!player || !countess) return;
   hudPages.textContent = `${player.pagesFound} / 5`;
   if (hudCoinVal) hudCoinVal.textContent = String(player.coins | 0);
+  if (hudKillVal) {
+    const next = KEY_KILLS.find((k) => kills < k);
+    hudKillVal.textContent = next ? `${kills}/${next}` : String(kills);
+  }
+  for (const n of [1, 2]) {
+    const el = hudKeySlots[n];
+    if (!el) continue;
+    const st = player.keys[n];
+    el.classList.toggle("held", st === "held");
+    el.classList.toggle("used", st === "used");
+  }
+  if (hudArmorBar) {
+    const ar = Math.max(0, Math.min(100, player.armor));
+    hudArmorBar.style.width = `${ar}%`;
+    hudArmorVal.textContent = `${Math.ceil(ar)}`;
+  }
+  updatePuzzleHud();
   const hp = Math.max(0, Math.min(100, player.health));
   const sanityPct = Math.max(0, Math.min(100, player.sanity));
   const oilPct = Math.max(0, Math.min(100, player.oil));
@@ -828,6 +1021,9 @@ function updateHud() {
     else if (nearbyContext.type === "alcove") interactLabel.textContent = "HIDE";
     else if (nearbyContext.type === "well") interactLabel.textContent = "TOSS";
     else if (nearbyContext.type === "secret") interactLabel.textContent = "SEARCH";
+    else if (nearbyContext.type === "door") interactLabel.textContent = player.keys[nearbyContext.obj.keyNo] === "held" ? "UNLOCK" : "LOCKED";
+    else if (nearbyContext.type === "candle") interactLabel.textContent = "LIGHT";
+    else if (nearbyContext.type === "plate") interactLabel.textContent = "PRESS";
     else if (nearbyContext.type === "exit") interactLabel.textContent = player.pagesFound >= 5 ? "ESCAPE" : "SEALED";
   } else { interactLabel.textContent = "SEARCH"; btnInteract.classList.remove("ready-glow"); }
 
@@ -847,7 +1043,7 @@ function updateHud() {
 }
 
 // ---------------------------------------------------------------- minimap
-const ROOM_COLORS = { ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44" };
+const ROOM_COLORS = { ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44", candles: "#4a3a18", crush: "#4a1e2a" };
 function buildMinimapBase() {
   const c = document.createElement("canvas");
   c.width = level.cols; c.height = level.rows;
@@ -895,6 +1091,19 @@ function drawMinimap() {
   for (const d of level.secrets) {
     if (!d.opened) continue;
     for (const [tx, ty] of d.tiles) mm.fillRect(tx, ty, 1, 1);
+  }
+  // locked chambers: door marker + padlock state
+  for (const lr of level.lockedRooms) {
+    const [dx, dy] = lr.door;
+    const held = player.keys[lr.keyNo] === "held";
+    mm.fillStyle = lr.solved ? "#7dff9a" : lr.unlocked ? "#e7c873" : held ? (Math.sin(t * 6) > 0 ? "#ffd86a" : "#8a6a20") : "#c41230";
+    mm.fillRect(dx - 1, dy, 3, 1);
+    if (!lr.unlocked) {
+      mm.globalAlpha = 0.35;
+      mm.fillStyle = "#000";
+      mm.fillRect(lr.room.x0, lr.room.y0, lr.room.x1 - lr.room.x0 + 1, lr.room.y1 - lr.room.y0 + 1);
+      mm.globalAlpha = 1;
+    }
   }
   // well
   if (level.well) {
@@ -966,7 +1175,7 @@ function spawnWellDweller(quiet = false) {
 
 function showBoon(kind, title, sub, secs = 3.4) {
   if (!boonBanner) return;
-  boonBanner.className = "boon-banner " + kind;
+  boonBanner.className = "boon-banner " + kind + (inPuzzle ? " low" : "");
   boonTitle.textContent = title;
   boonSub.textContent = sub;
   boonBanner.classList.remove("hidden");
@@ -1043,9 +1252,212 @@ function updateSpawner(dt) {
   spawnTimer = 6 + Math.random() * span;
 }
 
+// ---------------------------------------------------------------- locked chambers (v0.5)
+const PUZZLE_REWARDS = {
+  candles: { tier: "gilded", coins: 30, text: "Gilded mirror · 30 coins · Sanity restored" },
+  crush: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" }
+};
+
+function inRoomRect(r, x, y) {
+  const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
+  return tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
+}
+
+function tryUnlock(lr) {
+  if (!lr || lr.unlocked) return;
+  const roman = lr.numeral;
+  if (player.keys[lr.keyNo] !== "held") {
+    const need = KEY_KILLS[lr.keyNo - 1];
+    toast(`Locked. Requires Key ${roman} — it falls after ${need} kills (${Math.min(kills, need)}/${need}).`, 3);
+    return;
+  }
+  player.keys[lr.keyNo] = "used";
+  lr.unlocked = true;
+  setDoor(level, lr, true);
+  pathing.invalidate();
+  sound.playUnlock();
+  shake = Math.max(shake, 0.6);
+  fx.push({ type: "spark", x: lr.doorX, y: lr.doorY, n: 18, color: 0xffd86a });
+  toast(`Key ${roman} turns… the ${lr.name} grinds open.`, 3);
+}
+
+function showRiddle(lr) {
+  loreNum.textContent = `RIDDLE · KEY ${lr.numeral}`;
+  if (loreSeal) loreSeal.textContent = "THE DOOR IS SEALED";
+  loreTitle.textContent = lr.riddleTitle;
+  loreBody.textContent = lr.riddle.join("\n");
+  loreBody.classList.add("riddle");
+  lorePostscript.textContent = lr.key === "candles"
+    ? "Each candle has a carved sign on the floor before it. Light all six in the right order with your taper. A wrong flame snuffs them all."
+    : "Press the four glyph plates in the right order before the walls meet. A wrong plate resets them — and the walls lurch closer.";
+  lorePostscript.classList.remove("hidden");
+  loreCloseBtn.textContent = lr.active ? "I UNDERSTAND" : "CLOSE";
+  mode = "LORE";
+  screenLore.classList.remove("hidden");
+}
+if (btnRiddle) btnRiddle.addEventListener("click", () => { if (mode === "PLAYING" && inPuzzle) showRiddle(inPuzzle); });
+
+function startPuzzle(lr) {
+  inPuzzle = lr;
+  lr.active = true;
+  lr.progress = 0;
+  lr.wallInset = 0;
+  for (const it of lr.items) { it.lit = false; it.pressed = false; }
+  setDoor(level, lr, false);
+  resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
+  pathing.invalidate();
+  sound.playDoorSlam();
+  shake = Math.max(shake, 0.9);
+  // Banish anything that followed you in — this is about the puzzle.
+  for (const m of monsters) {
+    if (!m.dead && inRoomRect(lr.room, m.x, m.y)) { m.remove = true; fx.push({ type: "mist", x: m.x, y: m.y }); }
+  }
+  monsters = monsters.filter((m) => !m.remove);
+  projectiles = [];
+  if (lr.key === "candles") {
+    player.hasTaper = true;
+    toast("The door slams shut. A lit taper waits in your hand.", 3);
+  } else {
+    grindTimer = 0;
+    toast("The door slams shut — the walls begin to move!", 3);
+  }
+  showRiddle(lr);
+}
+
+function failPuzzleStep(lr) {
+  lr.failCount += 1;
+  lr.progress = 0;
+  shake = Math.max(shake, 0.8);
+  if (lr.key === "candles") {
+    for (const it of lr.items) it.lit = false;
+    sound.playSnuff();
+    toast("Wrong hour — every flame gutters out. Something stirs in the smoke…", 3);
+    const c = { x: (13 + 0.5) * TILE_SIZE, y: (51 + 0.5) * TILE_SIZE };
+    const m = new Monster("slimelet", c.x, c.y);
+    m.timer = 0.6;
+    monsters.push(m);
+    fx.push({ type: "slime", x: c.x, y: c.y });
+  } else {
+    for (const it of lr.items) it.pressed = false;
+    lr.wallInset = Math.min(crushMaxInset(lr), lr.wallInset + 14);
+    sound.playSnuff();
+    sound.playGrind();
+    toast("Wrong plate! The plates reset — and the walls lurch closer!", 3);
+  }
+}
+
+function lightCandle(it) {
+  const lr = inPuzzle;
+  if (!lr || lr.key !== "candles" || it.lit) return;
+  if (!player.hasTaper) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 8, color: 0x6a7a8a }); failPuzzleStep(lr); return; }
+  it.lit = true;
+  lr.progress += 1;
+  sound.playCandle(true);
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.0, n: 12, color: 0xffb060 });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} candle catches. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+
+function pressPlate(it) {
+  const lr = inPuzzle;
+  if (!lr || lr.key !== "crush" || it.pressed) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 10, color: 0xc41230 }); failPuzzleStep(lr); return; }
+  it.pressed = true;
+  lr.progress += 1;
+  sound.playPlate();
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 0.8, n: 12, color: 0x7ec8e8 });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} plate sinks into the floor. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+
+function solvePuzzle(lr) {
+  lr.solved = true;
+  lr.active = false;
+  inPuzzle = null;
+  player.hasTaper = false;
+  setDoor(level, lr, true);
+  pathing.invalidate();
+  sound.playSolve();
+  shake = Math.max(shake, 0.7);
+  const R = PUZZLE_REWARDS[lr.key];
+  player.mirrors[R.tier] += 1;
+  player.coins += R.coins;
+  if (lr.key === "candles") player.sanity = 100;
+  else player.armor = 100;
+  renderMirrorHud(false, R.tier);
+  fx.push({ type: "pickup", x: player.x, y: player.y, color: 0xffd86a });
+  showBoon("key", `${lr.name.toUpperCase()} SOLVED`, `The door opens. Reward: ${R.text}.`, 4.5);
+  buildMinimapBase();
+}
+
+function crushMaxInset(lr) {
+  const w = (lr.room.x1 - lr.room.x0 + 1) * TILE_SIZE;
+  return w / 2;
+}
+
+function updatePuzzles(dt) {
+  for (const lr of level.lockedRooms) {
+    // Walk fully inside an unlocked, unsolved chamber and it seals behind you.
+    if (!inPuzzle && lr.unlocked && !lr.solved && !lr.active && !player.hidden) {
+      const ty = Math.floor(player.y / TILE_SIZE);
+      if (inRoomRect(lr.room, player.x, player.y) && ty >= lr.room.y0 && player.y > lr.room.y0 * TILE_SIZE + player.radius + 2) startPuzzle(lr);
+    }
+    if (lr.key === "crush" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 130 * dt);
+  }
+  const lr = inPuzzle;
+  if (!lr || lr.key !== "crush") return;
+  const maxIn = crushMaxInset(lr);
+  lr.wallInset = Math.min(maxIn, lr.wallInset + (maxIn / lr.closeSecs) * dt);
+  grindTimer -= dt;
+  if (grindTimer <= 0) { grindTimer = 1.1; sound.playGrind(); shake = Math.max(shake, 0.28); }
+  const L = lr.room.x0 * TILE_SIZE + lr.wallInset;
+  const R = (lr.room.x1 + 1) * TILE_SIZE - lr.wallInset;
+  if (player.x < L + player.radius) player.x = L + player.radius;
+  if (player.x > R - player.radius) player.x = R - player.radius;
+  for (const m of monsters) { if (!m.dead && inRoomRect(lr.room, m.x, m.y)) m.x = Math.max(L + m.radius, Math.min(R - m.radius, m.x)); }
+  if (R - L < player.radius * 2 + 4) {
+    shake = 1.2;
+    handleDeath("The Crushing Hall closed its stone hands around you.");
+  }
+}
+
+function crushSecondsLeft(lr) {
+  const maxIn = crushMaxInset(lr) - player.radius - 2;
+  return Math.max(0, (maxIn - lr.wallInset) / (crushMaxInset(lr) / lr.closeSecs));
+}
+
+function updatePuzzleHud() {
+  if (!puzzleHud) return;
+  const lr = inPuzzle;
+  if (!lr || mode === "DEAD") { puzzleHud.classList.add("hidden"); return; }
+  puzzleHud.classList.remove("hidden");
+  puzzleHud.className = `puzzle-hud ${lr.key}`;
+  puzzleTitle.textContent = lr.name.toUpperCase();
+  if (lr.key === "candles") {
+    puzzleInfo.textContent = `Candles lit ${lr.progress} / ${lr.order.length}`;
+    puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
+  } else {
+    const secs = crushSecondsLeft(lr);
+    puzzleInfo.textContent = `Plates ${lr.progress} / ${lr.order.length} · walls meet in ${Math.ceil(secs)}s`;
+    puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset / crushMaxInset(lr)) * 100}%`;
+    puzzleHud.classList.toggle("urgent", secs < 10);
+  }
+}
+
 // ---------------------------------------------------------------- damage
 function damagePlayer(amount, fromX, fromY, reason) {
   if (player.hidden || player.invuln > 0 || mode !== "PLAYING") return;
+  if (player.armor > 0) {
+    const soak = Math.min(player.armor, amount);
+    player.armor -= soak;
+    amount -= soak;
+    fx.push({ type: "spark", x: player.x, y: player.y, n: 10, color: 0x9fc4e8 });
+    sound.playClang();
+    if (player.armor <= 0) toast("Your armor is shattered!", 2);
+  }
   player.health -= amount;
   player.invuln = 0.4;
   player.hurtAnim = 1;
@@ -1170,6 +1582,37 @@ function update(dt) {
   // Interactables
   nearbyContext = null;
   let promptText = "";
+  if (inPuzzle) {
+    let best = null, bd = inPuzzle.key === "candles" ? 50 : 54;
+    for (const it of inPuzzle.items) {
+      if (it.lit || it.pressed) continue;
+      const d = Math.hypot(it.x - player.x, it.y - player.y);
+      if (d < bd) { bd = d; best = it; }
+    }
+    if (best) {
+      const name = PUZZLE_GLYPHS[best.sym];
+      if (inPuzzle.key === "candles") {
+        nearbyContext = { type: "candle", obj: best };
+        promptText = `Tap LIGHT — candle marked ${name} (${inPuzzle.progress}/${inPuzzle.order.length} lit)`;
+      } else {
+        nearbyContext = { type: "plate", obj: best };
+        promptText = `Tap PRESS — the ${name} plate (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      }
+    }
+  }
+  if (!nearbyContext && !player.hidden) {
+    for (const lr of level.lockedRooms) {
+      if (lr.unlocked) continue;
+      if (player.y < lr.doorY && Math.hypot(lr.doorX - player.x, lr.doorY - player.y) < 92) {
+        nearbyContext = { type: "door", obj: lr };
+        const need = KEY_KILLS[lr.keyNo - 1];
+        promptText = player.keys[lr.keyNo] === "held"
+          ? `Tap UNLOCK — Key ${lr.numeral} · ${lr.name}`
+          : `${lr.name} — Requires Key ${lr.numeral} (${Math.min(kills, need)}/${need} kills)`;
+        break;
+      }
+    }
+  }
   for (const p of level.pages) {
     if (!p.collected && Math.hypot(p.x - player.x, p.y - player.y) < 34) {
       nearbyContext = { type: "page", obj: p };
@@ -1215,7 +1658,10 @@ function update(dt) {
   }
 
   // Countess
-  countess.update(dt, level, player, {
+  updatePuzzles(dt);
+  if (mode !== "PLAYING") return;
+  const seenPlayer = inPuzzle ? { ...player, hidden: true } : player;
+  countess.update(dt, level, seenPlayer, {
     onSpotted: () => sound.playAlert(),
     onCaught: () => {
       if (useMirror(true)) return;
@@ -1271,6 +1717,10 @@ function update(dt) {
       p.y += (p.vy * dt) / steps;
       const tx = Math.floor(p.x / TILE_SIZE), ty = Math.floor(p.y / TILE_SIZE);
       const cell = level.grid[ty] && level.grid[ty][tx];
+      if (cell === 3) {
+        const b = level.breakables.find((q) => !q.broken && q.tx === tx && q.ty === ty);
+        if (b) { p.dead = true; hitBreakable(b, 1); break; }
+      }
       if (cell === 1 || cell === 2 || cell === undefined) {
         p.dead = true;
         fx.push({ type: "spark", x: p.x - p.vx * 0.01, y: p.y - p.vy * 0.01, n: 6 });
@@ -1304,8 +1754,10 @@ function update(dt) {
   projectiles = projectiles.filter((p) => !p.dead);
 
   updateDrops(dt);
-  updateSpawner(dt);
-  updateWell(dt);
+  if (!inPuzzle) {
+    updateSpawner(dt);
+    updateWell(dt);
+  }
 
   // Well Dweller sanity aura
   for (const m of monsters) {
@@ -1352,7 +1804,8 @@ function draw() {
     shake, hurt: hurtFx,
     weapon: player ? player.weapon : selectedWeapon,
     speedBoost: player ? player.speedBoost : 0,
-    darkCurse: player ? player.darkCurse : 0
+    darkCurse: player ? player.darkCurse : 0,
+    puzzle: inPuzzle
   });
   fx.length = 0;
 }
@@ -1410,6 +1863,23 @@ if (new URLSearchParams(location.search).has("qa")) {
     get secrets() { return level.secrets; },
     get well() { return level.well; },
     get wellTimer() { return wellTimer; },
+    set kills(v) { kills = v; },
+    get keysAwarded() { return keysAwarded; },
+    get breakables() { return level.breakables; },
+    get lockedRooms() { return level.lockedRooms; },
+    get puzzle() { return inPuzzle; },
+    hitCrate(i, dmg = 1, kind = null) { return hitBreakable(level.breakables[i], dmg, kind); },
+    breakCrate(i, kind = null) { return breakBreakable(level.breakables[i], kind); },
+    giveKey(n) { player.keys[n] = "held"; },
+    unlock(n) { const lr = level.lockedRooms.find((r) => r.keyNo === n); tryUnlock(lr); return !!(lr && lr.unlocked); },
+    interact: () => triggerInteract(),
+    lightCandle(sym) { const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym); if (it) lightCandle(it); return inPuzzle ? inPuzzle.progress : -1; },
+    pressPlate(sym) { const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym); if (it) pressPlate(it); return inPuzzle ? inPuzzle.progress : -1; },
+    closeLore() { screenLore.classList.add("hidden"); if (mode === "LORE") mode = "PLAYING"; },
+    pickWeapon(id) { closeTokenPicker(); swapWeapon(id); },
+    hurt(n) { player.invuln = 0; damagePlayer(n, player.x, player.y + 10, "QA"); return [player.health, player.armor]; },
+    newRun: () => startNewRun(),
+    get boon() { return boonBanner.classList.contains("hidden") ? null : boonTitle.textContent; },
     set wellTimer(v) { wellTimer = v; }
   };
 }

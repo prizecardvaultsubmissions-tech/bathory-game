@@ -2,7 +2,7 @@ import { LEDGER_PAGES } from "./lore.js";
 
 export const TILE_SIZE = 44;
 export const COLS = 58;
-export const ROWS = 46;
+export const ROWS = 58;
 
 // Csejte Castle: six connected wings. Rects are inclusive tile ranges.
 export const ROOMS = [
@@ -11,7 +11,10 @@ export const ROOMS = [
   { key: "kitchens", name: "Kitchens & Cellars", x0: 41, y0: 21, x1: 54, y1: 32, floor: "kitchen" },
   { key: "hall", name: "Great Hall", x0: 20, y0: 18, x1: 37, y1: 32, floor: "floor" },
   { key: "torture", name: "Torture Gallery", x0: 3, y0: 3, x1: 19, y1: 15, floor: "blood" },
-  { key: "north", name: "North Gate Court", x0: 24, y0: 3, x1: 53, y1: 13, floor: "cobble" }
+  { key: "north", name: "North Gate Court", x0: 24, y0: 3, x1: 53, y1: 13, floor: "cobble" },
+  // Sealed puzzle chambers south of the Outer Ward (v0.5)
+  { key: "candles", name: "Chamber of Candles", x0: 9, y0: 47, x1: 17, y1: 55, floor: "floor", sealed: true },
+  { key: "crush", name: "Crushing Hall", x0: 40, y0: 47, x1: 44, y1: 55, floor: "blood", sealed: true }
 ];
 
 const CORRIDORS = [
@@ -21,7 +24,8 @@ const CORRIDORS = [
   [20, 7, 23, 9], // torture <-> north court
   [8, 16, 10, 20], // torture <-> chapel
   [47, 14, 49, 20], // north court <-> kitchens (cellar stair)
-  [38, 1, 40, 2] // gate passage
+  [38, 1, 40, 2], // gate passage
+  [13, 44, 13, 45], [42, 44, 42, 45] // ward -> locked chamber doors
 ];
 
 const PILLARS = [[23, 21], [33, 21], [23, 29], [33, 29], [12, 38], [21, 38], [36, 38], [45, 38], [30, 6], [44, 6]];
@@ -32,14 +36,72 @@ const PROP_DEFS = {
   pew: [[5, 25], [6, 25], [7, 25], [12, 25], [13, 25], [14, 25], [5, 27], [6, 27], [7, 27], [12, 27], [13, 27], [14, 27], [5, 29], [6, 29], [7, 29], [12, 29], [13, 29], [14, 29]],
   altar: [[8, 21], [9, 21], [10, 21]],
   table: [[43, 28], [44, 28], [45, 28], [46, 28], [25, 27], [26, 27], [27, 27], [30, 27], [31, 27], [32, 27]],
-  barrel: [[41, 21], [42, 21], [46, 21], [47, 24], [54, 32], [53, 32]],
   cauldron: [[53, 25]],
   throne: [[28, 18]],
   cage: [[13, 8], [17, 8], [7, 7]],
   rack: [[5, 11], [6, 11]],
   statue: [[32, 4], [46, 4], [26, 9]],
-  crate: [[26, 37], [31, 37], [50, 40], [4, 37]],
   well: [[16, 41]]
+};
+
+// Breakable crates & barrels (smash with your weapon; each rolls a prize).
+export const BREAKABLE_DEFS = [
+  // Kitchens & cellars
+  ["barrel", 41, 21], ["barrel", 42, 21], ["barrel", 46, 21], ["barrel", 47, 24], ["barrel", 54, 32], ["barrel", 53, 32], ["crate", 54, 22],
+  // Outer Ward
+  ["crate", 26, 37], ["crate", 31, 37], ["crate", 50, 40], ["crate", 4, 37], ["barrel", 54, 43], ["barrel", 3, 43], ["crate", 19, 43],
+  // Chapel
+  ["crate", 15, 31], ["barrel", 3, 32],
+  // Great Hall
+  ["crate", 21, 19], ["barrel", 37, 32], ["crate", 36, 23],
+  // Torture Gallery
+  ["barrel", 4, 4], ["crate", 18, 13],
+  // North Gate Court
+  ["crate", 25, 4], ["barrel", 53, 4], ["crate", 35, 12]
+];
+
+// Locked puzzle chambers — keys drop at 15 and 30 kills.
+export const LOCKED_ROOMS = [
+  {
+    key: "candles", keyNo: 1, numeral: "I", name: "Chamber of Candles",
+    door: [13, 46],
+    riddleTitle: "The Hours of Csejte",
+    riddle: [
+      "The bright one wakes upon the tower;",
+      "the bronze one tolls the noonday hour;",
+      "the red one, thorned, is cut for her bower;",
+      "at dusk the iron tooth bites the door;",
+      "the pale one climbs above the moor;",
+      "and last, the grinning one beneath the floor.",
+      "",
+      "Light them as the day is spent."
+    ],
+    // Six candles in a ring around (13,51); the signs are scrambled around the circle.
+    candles: [["moon", 13, 49], ["sun", 15, 50], ["skull", 15, 52], ["rose", 13, 53], ["key", 11, 52], ["bell", 11, 50]],
+    order: ["sun", "bell", "rose", "key", "moon", "skull"]
+  },
+  {
+    key: "crush", keyNo: 2, numeral: "II", name: "Crushing Hall",
+    door: [42, 46],
+    riddleTitle: "The Walls Remember",
+    riddle: [
+      "Every breath begins the end —",
+      "so first, the one you cannot hold.",
+      "What burns must come before what drowns it.",
+      "The ground you'll die on, press it last.",
+      "",
+      "Four plates. One order.",
+      "The stone is patient. You are not."
+    ],
+    plates: [["earth", 42, 48], ["water", 42, 50], ["air", 42, 52], ["fire", 42, 54]],
+    order: ["air", "fire", "water", "earth"],
+    closeSecs: 40
+  }
+];
+
+export const PUZZLE_GLYPHS = {
+  sun: "SUN", bell: "BELL", rose: "ROSE", key: "KEY", moon: "MOON", skull: "SKULL",
+  air: "AIR", fire: "FIRE", water: "WATER", earth: "EARTH"
 };
 
 const FEATURES = {
@@ -129,6 +191,25 @@ export function createLevel() {
       props.push({ type, tx, ty });
     }
   }
+  const center0 = (tx, ty) => ({ x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
+  const breakables = BREAKABLE_DEFS.map(([type, tx, ty], i) => {
+    grid[ty][tx] = 3;
+    return { id: i, type, tx, ty, ...center0(tx, ty), hp: type === "barrel" ? 2 : 3, maxHp: type === "barrel" ? 2 : 3, broken: false, hitT: 0 };
+  });
+  const lockedRooms = LOCKED_ROOMS.map((d) => {
+    const room = ROOMS.find((r) => r.key === d.key);
+    const [dx, dy] = d.door;
+    grid[dy][dx] = 1;
+    const items = (d.candles || d.plates).map(([sym, tx, ty], i) => {
+      grid[ty][tx] = 3;
+      return { i, sym, tx, ty, ...center0(tx, ty), lit: false, pressed: false };
+    });
+    return {
+      ...d, room, items, doorX: center0(dx, dy).x, doorY: center0(dx, dy).y,
+      unlocked: false, doorOpen: false, active: false, solved: false, progress: 0,
+      wallInset: 0, failCount: 0
+    };
+  });
   const [ex, ey] = FEATURES.exit;
   grid[ey][ex] = 2;
 
@@ -175,7 +256,9 @@ export function createLevel() {
     exitTile: { tx: ex, ty: ey, ...center(ex, ey) },
     waypoints: FEATURES.waypoints.map(([tx, ty]) => center(tx, ty)),
     well,
-    secrets
+    secrets,
+    breakables,
+    lockedRooms
   };
 }
 
@@ -187,6 +270,12 @@ export function openSecret(level, secret) {
     if (level.grid[ty] && level.grid[ty][tx] === 1) level.grid[ty][tx] = 0;
   }
   return true;
+}
+
+export function setDoor(level, lr, open) {
+  const [dx, dy] = lr.door;
+  level.grid[dy][dx] = open ? 0 : 1;
+  lr.doorOpen = open;
 }
 
 export function roomAt(level, tx, ty) {

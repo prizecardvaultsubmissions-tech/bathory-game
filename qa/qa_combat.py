@@ -103,7 +103,7 @@ try:
         t0 = q("window.__qa.elapsed")
         seen = []
         first_at = None
-        for i in range(16):
+        for i in range(26):
             page.wait_for_timeout(400)
             n = q("window.__qa.monsters.filter(m => !m.dead).length")
             seen.append(n)

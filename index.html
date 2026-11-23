@@ -39,7 +39,8 @@
         </div>
         <div id="hud-status" class="hud-pill status-pill unseen">UNSEEN</div>
         <div id="hud-weapon" class="hud-pill weapon-pill"><span id="hud-weapon-name">DAGGER</span><span id="hud-ammo" class="pill-value gold"></span></div>
-        <div id="hud-coins" class="hud-pill coin-pill" title="Coins (future shop)"><span class="coin-glyph">◉</span><span id="hud-coin-val" class="pill-value gold">0</span></div>
+        <div id="hud-coins" class="hud-pill coin-pill" title="Coins — offer them to the well"><span class="coin-glyph">◉</span><span id="hud-coin-val" class="pill-value gold">0</span></div>
+        <div id="hud-kills" class="hud-pill kill-pill" title="Kills — keys fall at 15 and 30"><span class="kill-glyph">☠</span><span id="hud-kill-val" class="pill-value">0/15</span><span class="key-slots"><span id="key-slot-1" class="key-slot" title="Key I">I</span><span id="key-slot-2" class="key-slot" title="Key II">II</span></span></div>
       </div>
 
       <div class="hud-bars">
@@ -55,6 +56,10 @@
           <div class="bar-label"><span>LAMP OIL</span><span id="hud-oil-val">100%</span></div>
           <div class="bar-track"><div id="hud-oil-bar" class="bar-fill oil"></div></div>
         </div>
+        <div class="bar-group armor-group">
+          <div class="bar-label"><span>ARMOR</span><span id="hud-armor-val">0</span></div>
+          <div class="bar-track"><div id="hud-armor-bar" class="bar-fill armor"></div></div>
+        </div>
         <div id="hud-mirrors" class="mirror-row" aria-label="Mirrors held"></div>
       </div>
 
@@ -63,7 +68,7 @@
           <button id="btn-mute" class="icon-btn" aria-label="Toggle Sound" title="Toggle Sound">🔊</button>
           <button id="btn-pause" class="icon-btn" aria-label="Pause" title="Pause">☰</button>
         </div>
-        <canvas id="minimap" width="58" height="46" aria-label="Castle map"></canvas>
+        <canvas id="minimap" width="58" height="58" aria-label="Castle map"></canvas>
       </div>
     </header>
 
@@ -71,6 +76,11 @@
       <div class="freeze-title" id="freeze-title">COUNTESS FROZEN</div>
       <div class="freeze-time" id="freeze-time">0.0</div>
       <div class="freeze-track"><div id="freeze-fill"></div></div>
+    </div>
+    <div id="puzzle-hud" class="puzzle-hud hidden">
+      <div class="puzzle-row"><span id="puzzle-title" class="puzzle-title"></span><button id="btn-riddle" class="riddle-btn" type="button">RIDDLE</button></div>
+      <div id="puzzle-info" class="puzzle-info"></div>
+      <div class="freeze-track"><div id="puzzle-fill"></div></div>
     </div>
     <div id="toast" class="hidden"></div>
     <div id="boon-banner" class="boon-banner hidden">
@@ -167,6 +177,19 @@
       </div>
     </section>
 
+    <!-- WEAPON TOKEN PICKER -->
+    <section id="screen-token" class="overlay-screen hidden">
+      <div class="card-frame weapon-card">
+        <div class="build-tag">WEAPON CHANGE TOKEN</div>
+        <h2>TRADE YOUR ARMS?</h2>
+        <p class="subtitle small">The token glows in your palm. Choose a new weapon, or keep the one in hand.</p>
+        <div id="token-grid" class="weapon-grid token-grid"></div>
+        <div class="title-buttons">
+          <button id="btn-token-keep" class="gothic-btn secondary-cta" type="button">KEEP MY WEAPON</button>
+        </div>
+      </div>
+    </section>
+
     <!-- HOW TO PLAY / PAUSE MODAL -->
     <section id="screen-help" class="overlay-screen hidden">
       <div class="card-frame modal-card">
@@ -176,6 +199,9 @@
           <li><strong>Drops:</strong> A slain servant may leave a <em>sanity vial</em>, a <em>mirror</em>, a <em>coin pouch</em>, or nothing. Walk over a drop before it fades (~20s).</li>
           <li><strong>The Well:</strong> Toss 5 coins into the Outer Ward well. The offering may grant a 15s <em>speed boost</em>, a 15s <em>darkness curse</em> (your lantern shrinks), or wake a <em>Well Dweller</em> — a crawling wraith that also rises from the well on its own. Her presence drains Sanity.</li>
           <li><strong>Secret doors:</strong> A few rooms hide a passage behind a curious item (a chapel candelabra, a skull, a crooked portrait). Search it and the wall will grind open. Found passages appear on the minimap.</li>
+          <li><strong>Crates &amp; barrels:</strong> Smash them (a few hits; the mace splits them in one or two). Inside: a <em>weapon change token</em> (pick a new weapon), an <em>armor plate</em> (the ARMOR bar soaks monster hits), a 15s <em>speed tonic</em>, or a <em>crate slime</em> that splits into two minis when it dies.</li>
+          <li><strong>Kills &amp; keys:</strong> The ☠ counter tracks kills. At <em>15</em> kills <em>Key I</em> falls; at <em>30</em>, <em>Key II</em>. Keys glow in the HUD.</li>
+          <li><strong>Locked chambers:</strong> Two sealed doors off the south of the Outer Ward. Key I opens the <em>Chamber of Candles</em>; Key II opens the <em>Crushing Hall</em>. The door locks behind you and a riddle appears (tap <em>RIDDLE</em> to read it again). Candles: light all seven in the riddle's order; a wrong flame snuffs them all. Crushing Hall: press four glyph plates in order before the walls meet; a wrong plate makes them lurch closer. Neither the Countess nor new servants can reach you inside. Solve it for a rich reward.</li>
           <li><strong>The Countess:</strong> She cannot be harmed. Blows only make her recoil. If she catches you in the open, you die.</li>
           <li><strong>Mirrors:</strong> Only a few lie in the castle — most come from fallen servants. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
           <li><strong>Lantern &amp; Stealth:</strong> Light lets you see but she sees it too. <em>DOUSE</em> to vanish, though darkness drains <strong>Sanity</strong>.</li>
@@ -247,7 +273,7 @@
         <div class="relic-card">
           <div class="relic-foil">FOIL SEAL UNLOCKED</div>
           <div class="relic-name">Elizabeth Báthory — The Csejte Ledger</div>
-          <div class="relic-sub">Csejte Castle Escaped • Prototype Build v0.3</div>
+          <div class="relic-sub">Csejte Castle Escaped • Prototype Build v0.5</div>
         </div>
         <div class="title-buttons">
           <button id="btn-play-again" class="gothic-btn primary-cta" type="button">PLAY AGAIN</button>

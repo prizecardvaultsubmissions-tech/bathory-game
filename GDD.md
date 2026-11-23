@@ -24,7 +24,7 @@ You install an unarchived horror build recovered from an estate drive—a top-do
 
 ---
 
-## 3. Core Gameplay Loop (v0.4 "Drops & Pressure")
+## 3. Core Gameplay Loop (v0.5 "Crates, Keys & Chambers")
 
 1. **Choose Your Arms:** Every run starts at the *Armory of Csejte*. Pick one of four original weapons (table below). Your pick is remembered, and RETRY keeps it.
 2. **Explore Six Wings:** The castle is now one large connected map, about 5x the v0.2 footprint (58x46 = 2,668 tiles vs. 26x20 = 520; 1,584 walkable vs. 359). It covers the Outer Ward, the Chapel of St. Ladislaus, the Kitchens & Cellars, the Great Hall, the Torture Gallery and the North Gate Court. Each wing has its own floor, dressing and fixed cinematic camera angle, plus an area title card as you enter.
@@ -63,7 +63,7 @@ Attacks auto-aim at the nearest servant in reach. Hold **ATTACK** to keep swingi
 | Mirror | 12% | 18% | Weighted by tier: Cracked ~70% (60% from ghouls), Silver ~22% (26%), Gilded ~7% (11%), Obsidian ~1% (3%). |
 
 ### Coins
-A run starts at 0. Pouches add to a **COINS** counter in the HUD (and on the death/win screens). They have no use in v0.4; the design intent is a later shop or weapon/mirror upgrades between or during runs.
+A run starts at 0. Pouches add to a **COINS** counter in the HUD (and on the death/win screens). Spend 5 at the well for a coin toss (below); the puzzle chambers also pay out coins. A later shop or upgrades can still use them.
 
 ### Mirrors (freeze the Countess)
 | Tier | Freeze | Placed in castle | Extra |
@@ -102,6 +102,42 @@ Only three rooms hide a passage into an adjacent wing, each opened by searching 
 
 A thin masonry crack and a faint glow hint at the item. When triggered, the wall grinds and sinks with a scrape, the camera shakes, and the open tiles appear on the minimap in pale green.
 
+### Breakable Crates & Barrels (v0.5)
+24 crates and barrels stand across all six wings. Hit them with your weapon (barrels take 2 hits, crates 3; the mace deals 2 per swing; a crossbow bolt counts as 1). Each hit wobbles the prop and throws wood splinters; the last one bursts it with a crack, a gold shock ring and a screen shake, clears the tile for walking, and rolls:
+
+| Contents | Chance | Effect |
+| :--- | :--- | :--- |
+| Weapon change token | 20% | A violet medallion. Pick it up to open a 4-weapon picker (game paused); choose a new weapon or keep yours. Crossbow swaps refill to 14 bolts. |
+| Armor plate | 32% | +35 **ARMOR** (max 100), shown as a steel bar under Lamp Oil. Armor soaks monster damage first, point for point. (The Countess still kills on touch.) |
+| Speed tonic | 22% | The same 15s speed boost as the well (×1.5, gold trail, SWIFT banner). |
+| Crate slime | 26% | An original low-poly blood-red slime with a green core oozes out (25 HP, hops). On death it splits once into two Mini Slimes (9 HP each). |
+
+When nothing else is in reach, ATTACK auto-turns toward the nearest crate.
+
+### Kill Counter & Keys (v0.5)
+A ☠ HUD pill counts kills toward the next key (0/15, then 15/30, then the total). At **15 kills Key I** falls from the last victim, and at **30 kills Key II** does. Each is an ornate glowing iron key with a banner ("The first key falls…" / "The second key falls…"). Keys never despawn. Held keys glow gold in the HUD; used keys turn green.
+
+### Locked Chambers (v0.5) — in the spirit of a temple-run game show, all-original content
+Two sealed doors open off the south wall of the Outer Ward. Each door is ornate wood and iron with a roman numeral and a padlock; walking up shows "Requires Key I/II (kills x/15)". With the right key, tap **UNLOCK**. Step inside and the door slams shut behind you, the riddle appears on parchment (re-read any time with the **RIDDLE** button), and the chamber uses a fixed, framed camera. While you're sealed in, no new servants spawn, the well sleeps, and the Countess cannot see or reach you. Anything that followed you in is banished. The puzzle pauses while you read the riddle.
+
+**Chamber I — The Chamber of Candles.** You receive a lit taper. Six candles stand in a ring, each with a carved sign on the floor (Sun, Bell, Rose, Key, Moon, Skull), scrambled around the circle. Light them in the order the riddle describes. A wrong candle snuffs every flame and a Mini Slime crawls out of the smoke.
+
+> *The Hours of Csejte* — The bright one wakes upon the tower; / the bronze one tolls the noonday hour; / the red one, thorned, is cut for her bower; / at dusk the iron tooth bites the door; / the pale one climbs above the moor; / and last, the grinning one beneath the floor. / Light them as the day is spent.
+>
+> **Answer:** SUN → BELL → ROSE → KEY → MOON → SKULL.
+
+Reward: Gilded mirror, 30 coins, Sanity restored to 100. The door reopens.
+
+**Chamber II — The Crushing Hall.** A narrow hall with four glyph plates down the middle (the alchemical signs for Air, Fire, Water and Earth). On entry the spiked side walls begin closing in with grinding, camera shake and a "walls meet in Ns" timer (≈40s). Press the plates in the riddle's order. A wrong plate resets them and the walls lurch closer. If the walls meet, you're crushed (normal death and Death Echo).
+
+> *The Walls Remember* — Every breath begins the end — / so first, the one you cannot hold. / What burns must come before what drowns it. / The ground you'll die on, press it last. / Four plates. One order. The stone is patient. You are not.
+>
+> **Answer:** AIR → FIRE → WATER → EARTH.
+
+Reward: Obsidian mirror, 40 coins, armor to 100. The walls retract and the door reopens.
+
+The minimap shows both chambers (darkened until unlocked) and colors each door red (locked), blinking gold (you hold its key), gold (unlocked) or green (solved).
+
 ### Health
 100 HP. Monster strikes deal damage, with a short invulnerability window and knockback. Braziers mend +4 HP/s. Reaching 0 HP ends the run with a monster-specific death line.
 
@@ -127,15 +163,16 @@ Designed for two-thumb portrait phone play (`touch-action: none`, multi-touch po
 
 ## 5. Campaign: Csejte (Čachtice) Castle
 
-**v0.4 playable map: "The Castle Wings"**, one continuous level made of six wings:
+**v0.5 playable map: "The Castle Wings"**, one continuous level made of six wings plus two sealed puzzle chambers:
 - **Outer Ward:** the start. Cobbled courtyard, crates, a well, braziers.
 - **Chapel of St. Ladislaus:** pews, altar, stained glass.
 - **Kitchens & Cellars:** tables, barrels, a cauldron; a cellar stair leads up to the North Court.
 - **Great Hall:** the throne, banquet tables, pillars. The Countess starts here.
 - **Torture Gallery:** cages and racks; holds the only Obsidian mirror.
 - **North Gate Court:** statues and the sealed North Gate exit.
+- **Chamber of Candles** (Key I) and **Crushing Hall** (Key II): locked puzzle rooms below the Outer Ward.
 
-The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 5 placed mirrors (3 Cracked, 1 Silver, 1 Obsidian), 8 bolt bundles, 14 monster spawn points, one well in the Outer Ward, and 3 secret doors.
+The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 5 placed mirrors (3 Cracked, 1 Silver, 1 Obsidian), 8 bolt bundles, 14 monster spawn points, one well in the Outer Ward, 3 secret doors, 24 breakable crates and barrels, and 2 locked puzzle chambers.
 
 Future chapters (design targets): the Silver Cisterns & Bathhouse (steam halves lantern range), the Iron Undercroft (pressure plates) and the Brick-Walled Tower finale.
 
