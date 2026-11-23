@@ -33,8 +33,8 @@
     <!-- TOP HUD (visible during gameplay) -->
     <header id="hud" class="hidden">
       <div class="hud-left">
-        <div class="hud-pill pages-pill" title="Ledger Pages Recovered">
-          <span class="pill-label">LEDGER</span>
+        <div class="hud-pill pages-pill" title="Ledger Pages / Grave Rubbings recovered">
+          <span id="hud-pages-label" class="pill-label">LEDGER</span>
           <span id="hud-pages" class="pill-value gold">0 / 5</span>
         </div>
         <div id="hud-status" class="hud-pill status-pill unseen">UNSEEN</div>
@@ -125,6 +125,13 @@
       </div>
     </div>
 
+    <!-- STAGE TITLE CARD (fades over gameplay) -->
+    <div id="stage-card" class="stage-card hidden" aria-live="polite">
+      <div id="stage-card-num" class="stage-card-num">STAGE I</div>
+      <div id="stage-card-title" class="stage-card-title">CSEJTE CASTLE</div>
+      <div id="stage-card-sub" class="stage-card-sub"></div>
+    </div>
+
     <!-- TITLE SCREEN -->
     <section id="screen-title" class="overlay-screen">
       <div class="card-frame title-card">
@@ -145,6 +152,15 @@
           <button id="btn-start" class="gothic-btn primary-cta" type="button">ENTER THE CASTLE</button>
           <button id="btn-how" class="gothic-btn secondary-cta" type="button">CONTROLS &amp; SURVIVAL</button>
         </div>
+        <div id="title-stages" class="title-stages hidden">
+          <button id="btn-continue" class="gothic-btn primary-cta moon-cta" type="button">☾ CONTINUE · STAGE II: THE GRAVEYARDS</button>
+          <div class="stage-select">
+            <span class="stage-select-label">STAGE SELECT</span>
+            <button id="btn-stage-1" class="stage-chip" type="button">I · CASTLE</button>
+            <button id="btn-stage-2" class="stage-chip moon" type="button">II · GRAVEYARDS</button>
+          </div>
+        </div>
+        <div id="title-purse" class="title-purse"></div>
 
         <div class="toggles-row">
           <label class="toggle-chip">
@@ -190,6 +206,55 @@
       </div>
     </section>
 
+    <!-- THE HOODED PEDLAR'S SHOP -->
+    <section id="screen-shop" class="overlay-screen hidden">
+      <div class="card-frame weapon-card shop-card">
+        <div class="build-tag">THE HOODED PEDLAR</div>
+        <h2>WARES FOR THE DAMNED</h2>
+        <p id="shop-sub" class="subtitle small"></p>
+        <div class="shop-purse">YOUR PURSE <span class="coin-glyph">◉</span><strong id="shop-coins">0</strong></div>
+        <div class="shop-section-label">SUPPLIES</div>
+        <div id="shop-items" class="shop-grid"></div>
+        <div class="shop-section-label">PERMANENT BLESSINGS <span>(kept forever)</span></div>
+        <div id="shop-upgrades" class="shop-grid"></div>
+        <div id="shop-feedback" class="shop-feedback" aria-live="polite"></div>
+        <div id="shop-confirm" class="shop-confirm hidden">
+          <span id="shop-confirm-text"></span>
+          <div class="shop-confirm-btns">
+            <button id="btn-shop-buy" class="gothic-btn primary-cta" type="button">BUY</button>
+            <button id="btn-shop-cancel" class="gothic-btn secondary-cta" type="button">CANCEL</button>
+          </div>
+        </div>
+        <div class="title-buttons">
+          <button id="btn-shop-close" class="gothic-btn secondary-cta" type="button">LEAVE THE STALL</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAGE TRANSITION -->
+    <section id="screen-stage" class="overlay-screen hidden">
+      <div class="card-frame stage-card-frame">
+        <div class="stage-moon" aria-hidden="true"></div>
+        <div class="build-tag gold-text">STAGE I CLEARED</div>
+        <div class="stage-next">STAGE II</div>
+        <h2 class="stage-title">THE GRAVEYARDS</h2>
+        <p class="subtitle">
+          Beyond the gate the road drops into the old burial yards of Csejte — fog, crows and five hundred crooked stones. Take five grave rubbings and reach the Gatehouse road. She is already walking among the graves.
+        </p>
+        <div class="stats-grid">
+          <div class="stat-box"><span>STAGE I TIME</span><strong id="stage-time">0:00</strong></div>
+          <div class="stat-box"><span>SLAIN</span><strong id="stage-kills">0</strong></div>
+          <div class="stat-box"><span>PURSE</span><strong id="stage-coins">0</strong></div>
+        </div>
+        <p class="echo-note">Your weapon, bolts, mirrors, armor and coins come with you.</p>
+        <div class="title-buttons">
+          <button id="btn-stage-enter" class="gothic-btn primary-cta" type="button">ENTER THE GRAVEYARDS</button>
+          <button id="btn-stage-shop" class="gothic-btn secondary-cta" type="button">VISIT THE HOODED PEDLAR</button>
+          <button id="btn-stage-title" class="gothic-btn secondary-cta" type="button">TITLE SCREEN</button>
+        </div>
+      </div>
+    </section>
+
     <!-- HOW TO PLAY / PAUSE MODAL -->
     <section id="screen-help" class="overlay-screen hidden">
       <div class="card-frame modal-card">
@@ -201,7 +266,10 @@
           <li><strong>Secret doors:</strong> A few rooms hide a passage behind a curious item (a chapel candelabra, a skull, a crooked portrait). Search it and the wall will grind open. Found passages appear on the minimap.</li>
           <li><strong>Crates &amp; barrels:</strong> Smash them (a few hits; the mace splits them in one or two). Inside: a <em>weapon change token</em> (pick a new weapon), an <em>armor plate</em> (the ARMOR bar soaks monster hits), a 15s <em>speed tonic</em>, or a <em>crate slime</em> that splits into two minis when it dies.</li>
           <li><strong>Kills &amp; keys:</strong> The ☠ counter tracks kills. At <em>15</em> kills <em>Key I</em> falls; at <em>30</em>, <em>Key II</em>. Keys glow in the HUD.</li>
-          <li><strong>Locked chambers:</strong> Two sealed doors off the south of the Outer Ward. Key I opens the <em>Chamber of Candles</em>; Key II opens the <em>Crushing Hall</em>. The door locks behind you and a riddle appears (tap <em>RIDDLE</em> to read it again). Candles: light all seven in the riddle's order; a wrong flame snuffs them all. Crushing Hall: press four glyph plates in order before the walls meet; a wrong plate makes them lurch closer. Neither the Countess nor new servants can reach you inside. Solve it for a rich reward.</li>
+          <li><strong>Locked chambers:</strong> Two sealed doors off the south of the Outer Ward. Key I opens the <em>Chamber of Candles</em>; Key II opens the <em>Crushing Hall</em>. The door locks behind you and a riddle appears (tap <em>RIDDLE</em> to read it again). Candles: light all six in the riddle's order; a wrong flame snuffs them all. Crushing Hall: press four glyph plates in order before the walls meet; a wrong plate makes them lurch closer. Neither the Countess nor new servants can reach you inside. Solve it for a rich reward.</li>
+          <li><strong>The Hooded Pedlar:</strong> A hooded merchant keeps a stall in a quiet corner of each stage (the east end of the Outer Ward; the south-east corner of the Chapel Graveyard) and also meets you between stages. Tap <em>SHOP</em>. Supplies: health draught, sanity salts, lamp oil, armor, mirrors, bolts, speed tonic, weapon swap. <em>Permanent blessings</em> (Iron Heart, Whetstone, Wider Wick, Silvered Glass) are kept forever. The game pauses while you trade.</li>
+          <li><strong>Coins &amp; your purse:</strong> Coins carry from Stage I into Stage II and are saved in your purse. If you die you keep the coins you carried in (minus anything you spent) plus <em>half</em> of what you picked up that run.</li>
+          <li><strong>Stage II · The Graveyards:</strong> Escape the castle with all five pages to unlock it (then use <em>CONTINUE</em> on the title screen). Take five <em>grave rubbings</em> across six yards and leave by the Gatehouse road. <em>Grave-risen</em> skeletons claw out of the earth, <em>Gravedigger Brutes</em> hit hard, and <em>Banshees</em> wail to drain sanity and slow you. <em>Open graves</em> have hands — keep your distance. Coffins and urns break like crates. The <em>black fountain</em> takes offerings like the well. Keys fall at 15 and 30 kills again for the <em>Crypt of Names</em> and the <em>Drowned Mausoleum</em>.</li>
           <li><strong>The Countess:</strong> She cannot be harmed. Blows only make her recoil. If she catches you in the open, you die.</li>
           <li><strong>Mirrors:</strong> Only a few lie in the castle — most come from fallen servants. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
           <li><strong>Lantern &amp; Stealth:</strong> Light lets you see but she sees it too. <em>DOUSE</em> to vanish, though darkness drains <strong>Sanity</strong>.</li>
@@ -239,11 +307,11 @@
         <h2>TAKEN IN THE DARK</h2>
         <p id="death-reason" class="subtitle"></p>
         <div class="stats-grid">
-          <div class="stat-box"><span>PAGES FOUND</span><strong id="death-pages">0 / 5</strong></div>
+          <div class="stat-box"><span id="death-pages-label">PAGES</span><strong id="death-pages">0 / 5</strong></div>
           <div class="stat-box"><span>SURVIVED</span><strong id="death-time">0:00</strong></div>
           <div class="stat-box"><span>SERVANTS SLAIN</span><strong id="death-kills">0</strong></div>
           <div class="stat-box"><span>MIRRORS USED</span><strong id="death-mirrors">0</strong></div>
-          <div class="stat-box"><span>COINS</span><strong id="death-coins">0</strong></div>
+          <div class="stat-box"><span>PURSE KEPT</span><strong id="death-coins">0</strong></div>
         </div>
         <p class="echo-note">Your fallen lantern stays lit on the stones for your next attempt.</p>
         <div class="title-buttons">
@@ -259,9 +327,9 @@
       <div class="card-frame win-card">
         <div class="win-emblem">♛</div>
         <div class="build-tag gold-text">HOUSE OF HORRORS // RELIC UNLOCKED</div>
-        <h2>GATE OF CSEJTE UNSEALED</h2>
+        <h2>THE GRAVEYARDS FALL SILENT</h2>
         <p class="subtitle">
-          With all five pages bound and Palatine Thurzó's riders cresting the ridge, you slip beyond the Outer Portcullis before the Countess can seal the ward.
+          Five rubbings rolled tight in your coat, you pass under the Gatehouse arch as the crows lift all at once. Behind you, the Countess stands among the stones and does not follow — not tonight.
         </p>
         <div class="stats-grid">
           <div class="stat-box"><span>ESCAPE TIME</span><strong id="win-time">0:00</strong></div>
@@ -273,7 +341,7 @@
         <div class="relic-card">
           <div class="relic-foil">FOIL SEAL UNLOCKED</div>
           <div class="relic-name">Elizabeth Báthory — The Csejte Ledger</div>
-          <div class="relic-sub">Csejte Castle Escaped • Prototype Build v0.5</div>
+          <div class="relic-sub">Castle &amp; Graveyards Escaped • Prototype Build v0.6</div>
         </div>
         <div class="title-buttons">
           <button id="btn-play-again" class="gothic-btn primary-cta" type="button">PLAY AGAIN</button>

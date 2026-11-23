@@ -410,4 +410,48 @@ export class SoundEngine {
     [392, 494, 587, 784].forEach((f, i) => this._tone(f, 0.7, { type: "triangle", gain: 0.08, delay: i * 0.12 }));
     this._noise(1.2, { type: "lowpass", freq: 500, gain: 0.2, decay: 0.8, delay: 0.3 });
   }
+
+  // ---- v0.6: shop, stage transition, graveyard ----
+  playUiTick() { this._tone(1200, 0.06, { type: "square", gain: 0.03 }); }
+  playShopOpen() {
+    this._tone(660, 0.3, { type: "triangle", gain: 0.06 });
+    this._tone(990, 0.4, { type: "triangle", gain: 0.05, delay: 0.1 });
+    this._noise(0.3, { type: "highpass", freq: 5000, gain: 0.05, decay: 0.4 });
+  }
+  playShopBuy() {
+    for (let i = 0; i < 4; i++) this._tone(1800 + Math.random() * 900, 0.08, { type: "square", gain: 0.025, delay: i * 0.05 });
+    this._tone(784, 0.25, { type: "triangle", gain: 0.08, delay: 0.18 });
+  }
+  playDeny() {
+    this._tone(180, 0.18, { type: "square", gain: 0.06 });
+    this._tone(140, 0.25, { type: "square", gain: 0.06, delay: 0.12 });
+  }
+  playStage() {
+    this._tone(98, 2.2, { type: "sawtooth", gain: 0.06, to: 65 });
+    [196, 233, 294].forEach((f, i) => this._tone(f, 1.6, { type: "triangle", gain: 0.05, delay: 0.2 + i * 0.25 }));
+    this._noise(2.0, { type: "lowpass", freq: 300, gain: 0.16, decay: 0.8 });
+  }
+  playWail() {
+    this._tone(900, 1.1, { type: "sawtooth", gain: 0.05, to: 1500 });
+    this._tone(1240, 1.0, { type: "sine", gain: 0.06, to: 700, delay: 0.1 });
+    this._noise(1.0, { type: "bandpass", freq: 2400, q: 3, gain: 0.08, decay: 0.7 });
+  }
+  playHands() {
+    this._noise(0.35, { type: "lowpass", freq: 380, gain: 0.3, decay: 0.4 });
+    this._tone(60, 0.4, { type: "sine", gain: 0.12, to: 35 });
+  }
+  playCoffin(ok = true) {
+    this._noise(0.5, { type: "lowpass", freq: ok ? 600 : 300, gain: 0.25, decay: 0.5 });
+    this._tone(ok ? 110 : 70, 0.3, { type: "triangle", gain: 0.1, to: ok ? 80 : 40, delay: 0.25 });
+  }
+  playBell(metal = "silver") {
+    const f = { silver: 1046, bronze: 698, iron: 440, bone: 262 }[metal] || 660;
+    [1, 2.4, 3.1].forEach((m, i) => this._tone(f * m, metal === "bone" ? 0.6 : 2.0, { type: "sine", gain: 0.09 / (i + 1) }));
+    if (metal === "bone") this._noise(0.2, { type: "bandpass", freq: 900, q: 2, gain: 0.12, decay: 0.3 });
+  }
+  playSurge() {
+    this._noise(1.0, { type: "lowpass", freq: 500, gain: 0.3, decay: 0.6 });
+    this._tone(55, 0.8, { type: "sine", gain: 0.12, to: 40 });
+  }
+  playWater() { this._noise(0.9, { type: "bandpass", freq: 700, q: 0.4, gain: 0.07, decay: 0.8 }); }
 }

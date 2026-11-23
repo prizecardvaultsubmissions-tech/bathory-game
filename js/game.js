@@ -123,7 +123,36 @@ let mmBase = null;
 let inPuzzle = null;      // the locked chamber you are sealed inside
 let keysAwarded = 0;      // 1 at 15 kills, 2 at 30 kills
 let grindTimer = 0;
+let warnedWail = false;
+let warnedHands = false;
 const KEY_KILLS = [15, 30];
+
+// ---------------------------------------------------------------- persistence (v0.6)
+// Coins live in a purse saved between runs; upgrades and the Stage II unlock are permanent.
+const LS_PURSE = "csejte_purse", LS_UP = "csejte_upgrades", LS_S2 = "csejte_stage2";
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+let upgrades = Object.assign({ heart: 0, edge: 0, wick: 0, glass: 0 }, lsGet(LS_UP, {}));
+let stage2Unlocked = !!lsGet(LS_S2, false);
+let currentStage = 1;     // stage of the run in progress
+let pendingStage = 1;     // stage the armory's BEGIN button will start
+let runStartCoins = 0;    // coins carried into this run (for the death rule)
+let shopCtx = null;       // "field" (the pedlar's stall) or "between" (after a stage)
+let shopPrevMode = null;
+let tokenReturn = null;   // where the weapon picker returns to (shop vs. play)
+let carryOver = null;     // player state carried from Stage I into Stage II
+function loadPurse() { return Math.max(0, lsGet(LS_PURSE, 0) | 0); }
+function savePurse(n) { lsSet(LS_PURSE, Math.max(0, Math.floor(n))); }
+// Death keeps what you carried in (minus anything you spent) plus half of what you picked up this run.
+function purseAfterDeath() {
+  if (!player) return loadPurse();
+  const c = Math.floor(player.coins);
+  return c >= runStartCoins ? runStartCoins + Math.floor((c - runStartCoins) / 2) : c;
+}
+const maxHealthFor = () => 100 + 15 * upgrades.heart;
+const dmgMul = () => 1 + 0.12 * upgrades.edge;
+const lanternMul = () => 1 + 0.12 * upgrades.wick;
+const freezeBonus = () => upgrades.glass;
 
 const hourNow = new Date().getHours();
 const isWitchingHour = hourNow >= 0 && hourNow < 3;
@@ -235,24 +264,39 @@ function showWeaponSelect() {
 }
 
 // ---------------------------------------------------------------- run setup
-function startNewRun() {
+function startNewRun(stage = pendingStage, carry = null) {
+  if (typeof stage !== "number") stage = pendingStage;
   sound.init();
   setSoundEnabled(chkSound.checked);
-  level = createLevel();
+  currentStage = stage;
+  level = createLevel(stage);
   pathing = new Pathing(level);
   renderer3d.setLevel(level);
   renderer3d.setWeapon(selectedWeapon);
   const w = WEAPONS[selectedWeapon];
   player = {
     x: level.playerSpawn.x, y: level.playerSpawn.y, radius: 11, angle: -Math.PI / 2, speed: 122,
-    lanternOn: true, oil: 100, sanity: 100, health: 100, hidden: false, hideSpot: null,
+    lanternOn: true, oil: 100, sanity: 100, health: maxHealthFor(), maxHealth: maxHealthFor(), hidden: false, hideSpot: null,
     pagesFound: 0, flareCooldown: 0, inBrazier: false,
     weapon: selectedWeapon, ammo: w.kind === "ranged" ? w.ammo : Infinity,
     attackCd: 0, attackAnim: 0, hurtAnim: 0, invuln: 0,
     mirrors: { cracked: 0, silver: 0, gilded: 0, obsidian: 0 },
     coins: 0, speedBoost: 0, darkCurse: 0,
-    armor: 0, keys: { 1: null, 2: null }, hasTaper: false
+    armor: 0, keys: { 1: null, 2: null }, hasTaper: false, slowT: 0, lanternMul: lanternMul()
   };
+  if (carry) {
+    // Escaped Stage I: weapon, bolts, mirrors, armor, coins and any tonic come with you.
+    player.weapon = carry.weapon;
+    player.ammo = carry.ammo;
+    player.mirrors = { ...carry.mirrors };
+    player.armor = carry.armor;
+    player.coins = carry.coins;
+    player.speedBoost = carry.speedBoost || 0;
+    renderer3d.setWeapon(player.weapon);
+  } else {
+    player.coins = loadPurse();
+  }
+  runStartCoins = player.coins;
   countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour, pathing);
   monsters = [];
   projectiles = [];
@@ -261,7 +305,7 @@ function startNewRun() {
   shake = 0; hurtFx = 0; elapsed = 0; flareFlash = 0; kills = 0; mirrorsUsed = 0;
   spawnTimer = 4; wellTimer = 32; boonTimer = 0; nearbyContext = null; lastRoomKey = null; freezeTier = null;
   warnedCountessImmune = false;
-  inPuzzle = null; keysAwarded = 0; grindTimer = 0;
+  inPuzzle = null; keysAwarded = 0; grindTimer = 0; warnedWail = false; warnedHands = false;
   if (puzzleHud) puzzleHud.classList.add("hidden");
   buildMinimapBase();
 
@@ -272,17 +316,38 @@ function startNewRun() {
   renderMirrorHud(true);
   updateHud();
   scheduleOptInCurseWhisper();
+  showStageCard(stage);
+}
+
+function showStageCard(stage) {
+  const el = $("stage-card");
+  if (!el) return;
+  $("stage-card-num").textContent = stage === 2 ? "STAGE II" : "STAGE I";
+  $("stage-card-title").textContent = stage === 2 ? "THE GRAVEYARDS" : "CSEJTE CASTLE";
+  $("stage-card-sub").textContent = stage === 2
+    ? "Take five grave rubbings · escape by the Gatehouse road"
+    : "Recover five ledger pages · escape by the North Gate";
+  el.classList.remove("hidden");
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
+  clearTimeout(showStageCard._t);
+  showStageCard._t = setTimeout(() => el.classList.add("hidden"), 4200);
 }
 
 function hideAllScreens() {
-  for (const s of [screenTitle, screenWeapon, screenHelp, screenLore, screenDeath, screenWin, screenToken]) if (s) s.classList.add("hidden");
+  for (const s of [screenTitle, screenWeapon, screenHelp, screenLore, screenDeath, screenWin, screenToken, $("screen-shop"), $("screen-stage")]) if (s) s.classList.add("hidden");
   freezeBanner.classList.add("hidden");
   toastEl.classList.add("hidden");
   if (boonBanner) boonBanner.classList.add("hidden");
+  const sc = $("stage-card"); if (sc) sc.classList.add("hidden");
 }
 
 function showTitle() {
+  // Quitting mid-run settles the purse by the same rule as dying.
+  if (player && (mode === "PAUSED" || mode === "PLAYING")) savePurse(purseAfterDeath());
   mode = "TITLE";
+  refreshTitleStages();
   hideAllScreens();
   hudEl.classList.add("hidden");
   touchControls.classList.add("hidden");
@@ -292,8 +357,18 @@ function showTitle() {
   screenTitle.classList.remove("hidden");
 }
 
-$("btn-start").addEventListener("click", showWeaponSelect);
-btnBegin.addEventListener("click", startNewRun);
+function refreshTitleStages() {
+  const row = $("title-stages");
+  if (!row) return;
+  row.classList.toggle("hidden", !stage2Unlocked);
+  const purse = $("title-purse");
+  if (purse) purse.textContent = `◉ ${loadPurse()} coins in your purse`;
+}
+$("btn-start").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
+if ($("btn-stage-1")) $("btn-stage-1").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
+if ($("btn-stage-2")) $("btn-stage-2").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = 2; showWeaponSelect(); });
+if ($("btn-continue")) $("btn-continue").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = 2; showWeaponSelect(); });
+btnBegin.addEventListener("click", () => startNewRun(pendingStage));
 $("btn-weapon-back").addEventListener("click", showTitle);
 $("btn-how").addEventListener("click", () => {
   sound.init();
@@ -312,10 +387,10 @@ $("btn-help-close").addEventListener("click", () => {
 });
 btnHelpQuit.addEventListener("click", showTitle);
 $("btn-lore-close").addEventListener("click", () => { screenLore.classList.add("hidden"); mode = "PLAYING"; });
-$("btn-retry").addEventListener("click", startNewRun);
-$("btn-death-weapon").addEventListener("click", showWeaponSelect);
+$("btn-retry").addEventListener("click", () => startNewRun(currentStage));
+$("btn-death-weapon").addEventListener("click", () => { pendingStage = currentStage; showWeaponSelect(); });
 $("btn-death-title").addEventListener("click", showTitle);
-$("btn-play-again").addEventListener("click", showWeaponSelect);
+$("btn-play-again").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
 $("btn-win-title").addEventListener("click", showTitle);
 
 // ---------------------------------------------------------------- toasts
@@ -383,8 +458,9 @@ function triggerInteract() {
     fx.push({ type: "pickup", x: p.x, y: p.y, color: 0xe7c873 });
     loreNum.textContent = p.lore.num;
     loreBody.classList.remove("riddle");
-    if (loreSeal) loreSeal.textContent = "WAX SEAL BROKEN";
-    loreCloseBtn.textContent = "POCKET PAGE (+12% SANITY)";
+    const S2 = level.stage === 2;
+    if (loreSeal) loreSeal.textContent = S2 ? "CHARCOAL RUBBING TAKEN" : "WAX SEAL BROKEN";
+    loreCloseBtn.textContent = S2 ? "POCKET RUBBING (+12% SANITY)" : "POCKET PAGE (+12% SANITY)";
     loreTitle.textContent = p.lore.title;
     loreBody.textContent = p.lore.body;
     if (p.lore.witchingPostscript && isWitchingHour) {
@@ -393,7 +469,7 @@ function triggerInteract() {
     } else lorePostscript.classList.add("hidden");
     mode = "LORE";
     screenLore.classList.remove("hidden");
-    if (player.pagesFound >= 5) toast("All five seals broken — the North Gate is open!", 4);
+    if (player.pagesFound >= 5) toast(S2 ? "All five rubbings taken — the Gatehouse road is open!" : "All five seals broken — the North Gate is open!", 4);
     updateHud();
   } else if (nearbyContext.type === "alcove") {
     player.hidden = true;
@@ -415,6 +491,12 @@ function triggerInteract() {
     lightCandle(nearbyContext.obj);
   } else if (nearbyContext.type === "plate") {
     pressPlate(nearbyContext.obj);
+  } else if (nearbyContext.type === "coffin") {
+    restCoffin(nearbyContext.obj);
+  } else if (nearbyContext.type === "bell") {
+    ringBell(nearbyContext.obj);
+  } else if (nearbyContext.type === "merchant") {
+    openShop("field");
   }
 }
 
@@ -463,7 +545,7 @@ function tryAttack() {
   // Melee (or crossbow bash when out of bolts)
   const reach = w.kind === "ranged" ? w.bashReach : w.reach;
   const arc = w.kind === "ranged" ? 1.8 : w.arc;
-  const dmg = w.kind === "ranged" ? w.bashDmg : w.dmg;
+  const dmg = (w.kind === "ranged" ? w.bashDmg : w.dmg) * dmgMul();
   const knock = w.kind === "ranged" ? 50 : w.knock;
   player.attackCd = w.kind === "ranged" ? 0.6 : w.cooldown;
   sound.playSwing(player.weapon);
@@ -527,12 +609,12 @@ function onMonsterKilled(m, forcedKind = null, opts = {}) {
     sound.playSlime();
   }
   sound.playMonsterDie();
-  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : (m.kind === "slime" || m.kind === "slimelet") ? 0xb0101e : 0x9fb28a });
+  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : (m.kind === "slime" || m.kind === "slimelet") ? 0xb0101e : m.kind === "skeleton" ? 0xe0d4b0 : m.kind === "banshee" ? 0xa8c8f0 : 0x9fb28a });
   const kind = forcedKind || rollDropKind(m);
   if (kind && kind !== "nothing") {
     const extra = { ...opts };
-    if (kind === "mirror" && !extra.tier) extra.tier = rollMirrorTier(m.kind === "ghoul" || m.kind === "dweller");
-    if (kind === "coins" && !extra.amount) extra.amount = m.kind === "dweller" ? 16 + Math.floor(Math.random() * 10) : m.kind === "ghoul" ? 12 + Math.floor(Math.random() * 9) : 6 + Math.floor(Math.random() * 8);
+    if (kind === "mirror" && !extra.tier) extra.tier = rollMirrorTier(m.kind === "ghoul" || m.kind === "dweller" || m.kind === "brute");
+    if (kind === "coins" && !extra.amount) extra.amount = (m.kind === "dweller" || m.kind === "brute") ? 16 + Math.floor(Math.random() * 10) : (m.kind === "ghoul" || m.kind === "skeleton") ? 12 + Math.floor(Math.random() * 9) : 6 + Math.floor(Math.random() * 8);
     if (kind === "sanity" && !extra.amount) extra.amount = 24;
     spawnDrop(kind, m.x, m.y, extra);
   }
@@ -542,7 +624,9 @@ const DROP_TABLE = {
   default: { nothing: 0.40, sanity: 0.25, coins: 0.23, mirror: 0.12 },
   ghoul:   { nothing: 0.30, sanity: 0.26, coins: 0.26, mirror: 0.18 },
   dweller: { nothing: 0.20, sanity: 0.25, coins: 0.30, mirror: 0.25 },
-  slimelet: { nothing: 0.70, sanity: 0.12, coins: 0.15, mirror: 0.03 }
+  slimelet: { nothing: 0.70, sanity: 0.12, coins: 0.15, mirror: 0.03 },
+  brute:   { nothing: 0.15, sanity: 0.22, coins: 0.40, mirror: 0.23 },
+  banshee: { nothing: 0.30, sanity: 0.38, coins: 0.20, mirror: 0.12 }
 };
 
 // What a smashed crate or barrel holds (v0.5)
@@ -632,7 +716,7 @@ function openTokenPicker() {
     </button>`;
   }).join("");
   tokenGrid.querySelectorAll(".token-option:not([disabled])").forEach((el) => {
-    el.addEventListener("click", () => { closeTokenPicker(); swapWeapon(el.dataset.weapon); });
+    el.addEventListener("click", () => { closeTokenPicker(); swapWeapon(el.dataset.weapon); finishTokenPick(); });
   });
   screenToken.classList.remove("hidden");
 }
@@ -640,7 +724,19 @@ function closeTokenPicker() {
   screenToken.classList.add("hidden");
   if (mode === "PICK") mode = "PLAYING";
 }
-$("btn-token-keep").addEventListener("click", () => { closeTokenPicker(); toast("You keep your weapon.", 1.6); });
+function finishTokenPick() {
+  if (!tokenReturn) return;
+  const f = tokenReturn;
+  tokenReturn = null;
+  if (carryOver) { carryOver.weapon = player.weapon; carryOver.ammo = player.ammo; }
+  f();
+}
+$("btn-token-keep").addEventListener("click", () => {
+  closeTokenPicker();
+  if (tokenReturn) { player.coins += 20; if (carryOver) carryOver.coins = player.coins; savePursePostBuy(); } // pedlar refunds an unused swap
+  toast("You keep your weapon.", 1.6);
+  finishTokenPick();
+});
 
 function rollDropKind(m) {
   const table = (m && DROP_TABLE[m.kind]) ? DROP_TABLE[m.kind] : DROP_TABLE.default;
@@ -716,7 +812,8 @@ function collectDrop(d) {
     sound.playKey();
     fx.push({ type: "pickup", x: d.x, y: d.y, color: 0xffd86a });
     const lr = level.lockedRooms.find((r) => r.keyNo === d.keyNo);
-    toast(`Iron Key ${d.keyNo === 1 ? "I" : "II"} — opens the ${lr ? lr.name : "sealed door"} off the Outer Ward.`, 3.4);
+    const above = lr ? roomAt(level, lr.door[0], lr.door[1] - 2) : null;
+    toast(`Iron Key ${d.keyNo === 1 ? "I" : "II"} — opens the ${lr ? lr.name : "sealed door"}${above ? ` off the ${above.name}` : ""}.`, 3.4);
     const slot = hudKeySlots[d.keyNo];
     if (slot) { slot.classList.remove("bump"); void slot.offsetWidth; slot.classList.add("bump"); }
   } else if (d.kind === "armor") {
@@ -781,7 +878,8 @@ function useMirror(auto = false) {
   player.mirrors[tier] -= 1;
   mirrorsUsed += 1;
   freezeTier = tier;
-  countess.freeze(T.secs);
+  const secs = T.secs + freezeBonus();
+  countess.freeze(secs);
   sound.playMirror(tier);
   fx.push({ type: "shatter", x: countess.x, y: countess.y, color: T.color });
   fx.push({ type: "spark", x: player.x, y: player.y, h: 1.2, n: 12, color: T.color });
@@ -803,7 +901,7 @@ function useMirror(auto = false) {
     resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
     toast(`Her hand closed — your ${T.name} shattered! RUN!`, 3);
   } else {
-    toast(`${T.name}: frozen for ${T.secs}s`, 2.2);
+    toast(`${T.name}: frozen for ${secs}s`, 2.2);
   }
   renderMirrorHud(false, tier);
   return true;
@@ -906,13 +1004,18 @@ function handleDeath(reason) {
   $("death-time").textContent = formatTime(elapsed);
   $("death-kills").textContent = String(kills);
   $("death-mirrors").textContent = String(mirrorsUsed);
-  const deathCoins = $("death-coins"); if (deathCoins) deathCoins.textContent = String(player.coins);
+  const kept = purseAfterDeath();
+  savePurse(kept);
+  const deathCoins = $("death-coins"); if (deathCoins) deathCoins.textContent = `${kept}`;
+  const dp = $("death-pages-label"); if (dp) dp.textContent = level.stage === 2 ? "RUBBINGS" : "PAGES";
   screenDeath.classList.remove("hidden");
 }
 
 function handleWin() {
   if (mode !== "PLAYING") return;
+  if (currentStage === 1) { handleStageClear(); return; }
   mode = "WIN";
+  savePurse(player.coins);
   sound.playWin();
   clearDeathEcho();
   endRunUi();
@@ -923,6 +1026,221 @@ function handleWin() {
   const winCoins = $("win-coins"); if (winCoins) winCoins.textContent = String(player.coins);
   screenWin.classList.remove("hidden");
 }
+
+// ---------------------------------------------------------------- stage transition (v0.6)
+function handleStageClear() {
+  mode = "STAGECLEAR";
+  sound.playWin();
+  clearDeathEcho();
+  endRunUi();
+  stage2Unlocked = true;
+  lsSet(LS_S2, true);
+  savePurse(player.coins);
+  carryOver = {
+    weapon: player.weapon, ammo: player.ammo, mirrors: { ...player.mirrors },
+    armor: player.armor, coins: player.coins, speedBoost: 0
+  };
+  $("stage-time").textContent = formatTime(elapsed);
+  $("stage-kills").textContent = String(kills);
+  $("stage-coins").textContent = String(player.coins);
+  screenStageShow();
+}
+function screenStageShow() {
+  const el = $("screen-stage");
+  $("stage-coins").textContent = String(carryOver ? carryOver.coins : 0);
+  el.classList.remove("hidden");
+  el.classList.remove("enter");
+  void el.offsetWidth;
+  el.classList.add("enter");
+}
+function enterStage2() {
+  sound.playStage();
+  const carry = carryOver;
+  carryOver = null;
+  startNewRun(2, carry);
+}
+if ($("btn-stage-enter")) $("btn-stage-enter").addEventListener("click", enterStage2);
+if ($("btn-stage-shop")) $("btn-stage-shop").addEventListener("click", () => { $("screen-stage").classList.add("hidden"); openShop("between"); });
+if ($("btn-stage-title")) $("btn-stage-title").addEventListener("click", () => { carryOver = null; showTitle(); });
+
+// ---------------------------------------------------------------- the Hooded Pedlar's shop (v0.6)
+// "field" items only make sense mid-run (healing is refilled at every stage start anyway).
+const SHOP_ITEMS = [
+  { id: "potion", name: "Health Draught", icon: "✚", price: 12, field: true, desc: "+50 health" },
+  { id: "salts", name: "Sanity Salts", icon: "✺", price: 10, field: true, desc: "+40 sanity" },
+  { id: "oil", name: "Lamp Oil", icon: "♨", price: 8, field: true, desc: "Refill your lantern" },
+  { id: "plate", name: "Armor Plate", icon: "⛨", price: 15, desc: "+35 armor" },
+  { id: "m-cracked", name: "Cracked Mirror", icon: "◐", price: 15, desc: "Freezes her 3s", tier: "cracked" },
+  { id: "m-silver", name: "Silver Mirror", icon: "◯", price: 32, desc: "Freezes her 6s", tier: "silver" },
+  { id: "m-gilded", name: "Gilded Mirror", icon: "✦", price: 60, desc: "Freezes her 10s", tier: "gilded" },
+  { id: "bolts", name: "Silver Bolts ×8", icon: "➶", price: 10, desc: "Crossbow ammunition" },
+  { id: "tonic", name: "Speed Tonic", icon: "⚡", price: 12, desc: "Run 1.5× for 15s" },
+  { id: "swap", name: "Weapon Swap", icon: "⚔", price: 20, desc: "Trade for any weapon" }
+];
+const UPGRADES = [
+  { id: "heart", name: "Iron Heart", icon: "♥", prices: [50, 80, 120], desc: "+15 max health per level" },
+  { id: "edge", name: "Whetstone", icon: "⚒", prices: [50, 80, 120], desc: "+12% weapon damage per level" },
+  { id: "wick", name: "Wider Wick", icon: "☼", prices: [40, 70, 100], desc: "+12% lantern reach per level" },
+  { id: "glass", name: "Silvered Glass", icon: "❖", prices: [60, 90, 130], desc: "+1s mirror freeze per level" }
+];
+let shopSel = null;
+function shopCoins() { return player ? Math.floor(player.coins) : 0; }
+function shopBlock(it) {
+  // Returns a reason string if the item can't be bought right now (besides price).
+  const w = WEAPONS[player.weapon];
+  if (it.id === "potion" && player.health >= player.maxHealth) return "Health full";
+  if (it.id === "salts" && player.sanity >= 100) return "Sanity full";
+  if (it.id === "oil" && player.oil >= 100) return "Lamp full";
+  if (it.id === "plate" && player.armor >= 100) return "Armor full";
+  if (it.id === "bolts" && w.kind !== "ranged") return "Crossbow only";
+  if (it.id === "bolts" && player.ammo >= w.maxAmmo) return "Quiver full";
+  return null;
+}
+function upgradePrice(u) { const lv = upgrades[u.id] || 0; return lv >= u.prices.length ? null : u.prices[lv]; }
+function openShop(ctx) {
+  if (!player) return;
+  shopCtx = ctx;
+  shopPrevMode = mode;
+  mode = "SHOP";
+  attackHeld = false;
+  shopSel = null;
+  $("shop-sub").textContent = ctx === "between"
+    ? "“The road to the graveyards is long. Spend wisely, little lamb.”"
+    : "“Coins for comfort. She cannot see you while we trade.”";
+  renderShop();
+  $("screen-shop").classList.remove("hidden");
+  sound.playShopOpen();
+}
+function closeShop() {
+  $("screen-shop").classList.add("hidden");
+  if (shopCtx === "between") {
+    if (carryOver) carryOver.coins = player.coins;
+    mode = "STAGECLEAR";
+    screenStageShow();
+  } else {
+    mode = "PLAYING";
+    updateHud();
+  }
+  shopSel = null;
+}
+function renderShop() {
+  $("shop-coins").textContent = String(shopCoins());
+  const items = SHOP_ITEMS.filter((it) => shopCtx === "field" || !it.field);
+  const card = (key, icon, name, desc, price, extra = "", blocked = null) => {
+    const poor = price !== null && shopCoins() < price;
+    const cls = ["shop-item", blocked ? "blocked" : "", poor ? "poor" : "", shopSel === key ? "selected" : ""].join(" ");
+    return `<button class="${cls}" type="button" data-key="${key}">
+      <span class="shop-icon">${icon}</span>
+      <span class="shop-text"><span class="shop-name">${name}</span><span class="shop-desc">${blocked || desc}</span>${extra}</span>
+      <span class="shop-price">${price === null ? "MAX" : `◉${price}`}</span>
+    </button>`;
+  };
+  $("shop-items").innerHTML = items.map((it) => card(it.id, it.icon, it.name, it.desc, it.price, "", shopBlock(it))).join("");
+  $("shop-upgrades").innerHTML = UPGRADES.map((u) => {
+    const lv = upgrades[u.id] || 0;
+    const pips = `<span class="shop-pips">${[0, 1, 2].map((i) => `<i class="${i < lv ? "on" : ""}"></i>`).join("")}</span>`;
+    return card("up-" + u.id, u.icon, u.name, u.desc, upgradePrice(u), pips, lv >= u.prices.length ? "Mastered" : null);
+  }).join("");
+  document.querySelectorAll("#screen-shop .shop-item").forEach((el) => el.addEventListener("click", () => selectShopItem(el.dataset.key, el)));
+  updateShopConfirm();
+}
+function shopLookup(key) {
+  if (key.startsWith("up-")) {
+    const u = UPGRADES.find((q) => "up-" + q.id === key);
+    return u ? { name: `${u.name} ${["I", "II", "III"][upgrades[u.id] || 0] || ""}`.trim(), price: upgradePrice(u), blocked: upgradePrice(u) === null ? "Mastered" : null, up: u } : null;
+  }
+  const it = SHOP_ITEMS.find((q) => q.id === key);
+  return it ? { name: it.name, price: it.price, blocked: shopBlock(it), it } : null;
+}
+function shopDeny(el, msg) {
+  sound.playDeny();
+  const fb = $("shop-feedback");
+  fb.textContent = msg;
+  fb.className = "shop-feedback deny";
+  if (el) { el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake"); }
+}
+function selectShopItem(key, el) {
+  const L = shopLookup(key);
+  if (!L) return;
+  if (L.blocked) { shopSel = null; renderShop(); shopDeny(document.querySelector(`#screen-shop [data-key="${key}"]`), `${L.name}: ${L.blocked.toLowerCase()}.`); return; }
+  if (shopCoins() < L.price) {
+    shopSel = null;
+    renderShop();
+    shopDeny(document.querySelector(`#screen-shop [data-key="${key}"]`), `Not enough coins — ${L.name} costs ◉${L.price}, you have ◉${shopCoins()}.`);
+    return;
+  }
+  shopSel = key;
+  sound.playUiTick();
+  renderShop();
+}
+function updateShopConfirm() {
+  const bar = $("shop-confirm");
+  const fb = $("shop-feedback");
+  if (!shopSel) { bar.classList.add("hidden"); return; }
+  const L = shopLookup(shopSel);
+  bar.classList.remove("hidden");
+  $("shop-confirm-text").textContent = `Buy ${L.name} for ◉${L.price}?`;
+  fb.textContent = "";
+  fb.className = "shop-feedback";
+}
+function buyShopItem(key) {
+  const L = shopLookup(key);
+  if (!L || L.blocked || L.price === null) return false;
+  if (shopCoins() < L.price) { shopDeny(null, `Not enough coins — need ◉${L.price - shopCoins()} more.`); return false; }
+  player.coins -= L.price;
+  let msg = `Bought ${L.name}.`;
+  if (L.up) {
+    upgrades[L.up.id] = (upgrades[L.up.id] || 0) + 1;
+    lsSet(LS_UP, upgrades);
+    applyUpgrades(L.up.id);
+    msg = `${L.up.name} is now level ${upgrades[L.up.id]} — permanent.`;
+  } else {
+    const it = L.it;
+    if (it.id === "potion") player.health = Math.min(player.maxHealth, player.health + 50);
+    else if (it.id === "salts") player.sanity = Math.min(100, player.sanity + 40);
+    else if (it.id === "oil") player.oil = 100;
+    else if (it.id === "plate") player.armor = Math.min(100, player.armor + 35);
+    else if (it.tier) { player.mirrors[it.tier] += 1; renderMirrorHud(false, it.tier); }
+    else if (it.id === "bolts") { const w = WEAPONS[player.weapon]; player.ammo = Math.min(w.maxAmmo, player.ammo + 8); }
+    else if (it.id === "tonic") { player.speedBoost = 15; player.darkCurse = 0; if (carryOver && shopCtx === "between") carryOver.speedBoost = 15; }
+    else if (it.id === "swap") {
+      sound.playShopBuy();
+      if (shopCtx === "between" && carryOver) carryOver.coins = player.coins;
+      savePursePostBuy();
+      $("screen-shop").classList.add("hidden");
+      tokenReturn = () => { mode = "SHOP"; renderShop(); $("screen-shop").classList.remove("hidden"); };
+      openTokenPicker();
+      return true;
+    }
+  }
+  if (shopCtx === "between" && carryOver) {
+    carryOver.coins = player.coins;
+    carryOver.armor = player.armor; carryOver.ammo = player.ammo; carryOver.mirrors = { ...player.mirrors };
+  }
+  savePursePostBuy();
+  sound.playShopBuy();
+  shopSel = null;
+  renderShop();
+  const fb = $("shop-feedback");
+  fb.textContent = msg;
+  fb.className = "shop-feedback ok";
+  if (hudCoinVal) hudCoinVal.textContent = String(player.coins | 0);
+  return true;
+}
+function savePursePostBuy() {
+  // Between stages the purse is the source of truth; mid-run it settles at death/escape.
+  if (shopCtx === "between") savePurse(player.coins);
+}
+function applyUpgrades(changed = null) {
+  if (!player) return;
+  const mh = maxHealthFor();
+  if (changed === "heart") player.health = Math.min(mh, player.health + 15);
+  player.maxHealth = mh;
+  player.lanternMul = lanternMul();
+}
+if ($("btn-shop-buy")) $("btn-shop-buy").addEventListener("click", () => { if (shopSel) buyShopItem(shopSel); });
+if ($("btn-shop-cancel")) $("btn-shop-cancel").addEventListener("click", () => { shopSel = null; renderShop(); });
+if ($("btn-shop-close")) $("btn-shop-close").addEventListener("click", closeShop);
 
 // ---------------------------------------------------------------- HUD
 const mirrorChipEls = {};
@@ -966,6 +1284,8 @@ function renderMirrorHud(rebuild = false, bumpTier = null) {
 function updateHud() {
   if (!player || !countess) return;
   hudPages.textContent = `${player.pagesFound} / 5`;
+  const pl = $("hud-pages-label");
+  if (pl && pl.textContent !== (level.collectShort || "LEDGER")) pl.textContent = level.collectShort || "LEDGER";
   if (hudCoinVal) hudCoinVal.textContent = String(player.coins | 0);
   if (hudKillVal) {
     const next = KEY_KILLS.find((k) => kills < k);
@@ -984,10 +1304,11 @@ function updateHud() {
     hudArmorVal.textContent = `${Math.ceil(ar)}`;
   }
   updatePuzzleHud();
-  const hp = Math.max(0, Math.min(100, player.health));
+  const mh = player.maxHealth || 100;
+  const hp = Math.max(0, Math.min(mh, player.health));
   const sanityPct = Math.max(0, Math.min(100, player.sanity));
   const oilPct = Math.max(0, Math.min(100, player.oil));
-  hudHealthBar.style.width = `${hp}%`;
+  hudHealthBar.style.width = `${(hp / mh) * 100}%`;
   hudHealthVal.textContent = `${Math.ceil(hp)}`;
   hudSanityBar.style.width = `${sanityPct}%`;
   hudSanityVal.textContent = `${Math.round(sanityPct)}%`;
@@ -1017,7 +1338,10 @@ function updateHud() {
   if (player.hidden) { interactLabel.textContent = "EXIT"; btnInteract.classList.add("ready-glow"); }
   else if (nearbyContext) {
     btnInteract.classList.add("ready-glow");
-    if (nearbyContext.type === "page") interactLabel.textContent = "READ";
+    if (nearbyContext.type === "page") interactLabel.textContent = level.stage === 2 ? "RUB" : "READ";
+    else if (nearbyContext.type === "merchant") interactLabel.textContent = "SHOP";
+    else if (nearbyContext.type === "coffin") interactLabel.textContent = "REST";
+    else if (nearbyContext.type === "bell") interactLabel.textContent = "RING";
     else if (nearbyContext.type === "alcove") interactLabel.textContent = "HIDE";
     else if (nearbyContext.type === "well") interactLabel.textContent = "TOSS";
     else if (nearbyContext.type === "secret") interactLabel.textContent = "SEARCH";
@@ -1043,7 +1367,8 @@ function updateHud() {
 }
 
 // ---------------------------------------------------------------- minimap
-const ROOM_COLORS = { ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44", candles: "#4a3a18", crush: "#4a1e2a" };
+const ROOM_COLORS = { ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44", candles: "#4a3a18", crush: "#4a1e2a",
+  gatehouse: "#3a3e48", mausoleum: "#34383a", cryptyard: "#3a3a40", orchard: "#2e3a2a", bonepit: "#4a4234", chapelyard: "#2c3a30", crypt: "#4a3a18", flood: "#1e3a44" };
 function buildMinimapBase() {
   const c = document.createElement("canvas");
   c.width = level.cols; c.height = level.rows;
@@ -1105,10 +1430,20 @@ function drawMinimap() {
       mm.globalAlpha = 1;
     }
   }
-  // well
+  // well / fountain
   if (level.well) {
-    mm.fillStyle = "#6a88aa";
+    mm.fillStyle = level.well.fountain ? "#4aa080" : "#6a88aa";
     mm.fillRect(level.well.tx, level.well.ty, 1, 1);
+  }
+  // open graves (Stage II hazard)
+  if (level.graves) {
+    mm.fillStyle = "#6a4a2a";
+    for (const g of level.graves) mm.fillRect(g.tx, g.ty, 1, 1);
+  }
+  // the Hooded Pedlar
+  if (level.merchant) {
+    mm.fillStyle = Math.sin(t * 3) > 0 ? "#ffb050" : "#a86a20";
+    mm.fillRect(level.merchant.tx - 0.5, level.merchant.ty - 0.5, 2, 2);
   }
   // player
   mm.fillStyle = "#ffffff";
@@ -1118,6 +1453,11 @@ function drawMinimap() {
 // ---------------------------------------------------------------- spawning
 function pickMonsterType() {
   const r = Math.random();
+  if (level && level.stage === 2) {
+    if (elapsed < 20) return "skeleton";
+    if (elapsed < 60) return r < 0.6 ? "skeleton" : r < 0.85 ? "banshee" : "brute";
+    return r < 0.45 ? "skeleton" : r < 0.75 ? "banshee" : "brute";
+  }
   if (elapsed < 20) return "ghoul";
   if (elapsed < 70) return r < 0.55 ? "ghoul" : r < 0.85 ? "maiden" : "bats";
   return r < 0.4 ? "ghoul" : r < 0.72 ? "maiden" : "bats";
@@ -1140,7 +1480,7 @@ function spawnMonster(type = pickMonsterType(), at = null, quiet = false) {
   const d = Math.hypot(sp.x - player.x, sp.y - player.y);
   if (d < TILE_SIZE * 20) sound.playSpawn();
   const room = roomAt(level, Math.floor(sp.x / TILE_SIZE), Math.floor(sp.y / TILE_SIZE));
-  if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} rises${room ? ` in the ${room.name}` : ""}…`, 2.2);
+  if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} ${type === "skeleton" ? "claws up out of the earth" : "rises"}${room ? ` in the ${room.name}` : ""}…`, 2.2);
   return m;
 }
 
@@ -1168,7 +1508,7 @@ function spawnWellDweller(quiet = false) {
   fx.push({ type: "mist", x: w.x, y: w.y });
   fx.push({ type: "mist", x: exit.x, y: exit.y });
   sound.playWellSpawn();
-  if (!quiet) toast("A Well Dweller crawls from the black water…", 3);
+  if (!quiet) toast(level.well.fountain ? "A Well Dweller drags herself out of the fountain…" : "A Well Dweller crawls from the black water…", 3);
   shake = Math.max(shake, 0.4);
   return m;
 }
@@ -1186,7 +1526,7 @@ function tossWell(forced = null) {
   if (mode !== "PLAYING" || !player) return false;
   sound.init();
   if (player.coins < 5) {
-    toast("The well wants an offering of 5 coins.");
+    toast(level.well.fountain ? "The black fountain wants an offering of 5 coins." : "The well wants an offering of 5 coins.");
     return false;
   }
   player.coins -= 5;
@@ -1206,7 +1546,7 @@ function tossWell(forced = null) {
     player.darkCurse = 15;
     player.speedBoost = 0;
     sound.playCurse();
-    showBoon("curse", "DARKNESS CURSE", "The well drinks the light. Your lantern shrinks for 15s.");
+    showBoon("curse", "DARKNESS CURSE", `The ${level.well.fountain ? "fountain" : "well"} drinks the light. Your lantern shrinks for 15s.`);
   } else {
     spawnWellDweller();
     showBoon("dweller", "WELL DWELLER", "Something answers the splash and crawls out.");
@@ -1255,8 +1595,12 @@ function updateSpawner(dt) {
 // ---------------------------------------------------------------- locked chambers (v0.5)
 const PUZZLE_REWARDS = {
   candles: { tier: "gilded", coins: 30, text: "Gilded mirror · 30 coins · Sanity restored" },
-  crush: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" }
+  crush: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" },
+  crypt: { tier: "gilded", coins: 35, text: "Gilded mirror · 35 coins · Sanity restored" },
+  flood: { tier: "obsidian", coins: 45, text: "Obsidian mirror · 45 coins · Full armor" }
 };
+const kindOf = (lr) => lr.kind || lr.key;
+const isOrderPuzzle = (lr) => kindOf(lr) === "candles" || kindOf(lr) === "crypt";
 
 function inRoomRect(r, x, y) {
   const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
@@ -1287,9 +1631,12 @@ function showRiddle(lr) {
   loreTitle.textContent = lr.riddleTitle;
   loreBody.textContent = lr.riddle.join("\n");
   loreBody.classList.add("riddle");
-  lorePostscript.textContent = lr.key === "candles"
-    ? "Each candle has a carved sign on the floor before it. Light all six in the right order with your taper. A wrong flame snuffs them all."
-    : "Press the four glyph plates in the right order before the walls meet. A wrong plate resets them — and the walls lurch closer.";
+  lorePostscript.textContent = {
+    candles: "Each candle has a carved sign on the floor before it. Light all six in the right order with your taper. A wrong flame snuffs them all.",
+    crush: "Press the four glyph plates in the right order before the walls meet. A wrong plate resets them — and the walls lurch closer.",
+    crypt: "Five coffins, each with a brass plaque. Tap REST at each to close its lid in the right order. A wrong lid wakes its sleeper — and every lid slides open again.",
+    flood: "Four bells hang in the water: silver, bronze, iron and bone. Ring them in the right order before the water closes over your head. A wrong bell makes the water surge."
+  }[kindOf(lr)];
   lorePostscript.classList.remove("hidden");
   loreCloseBtn.textContent = lr.active ? "I UNDERSTAND" : "CLOSE";
   mode = "LORE";
@@ -1302,7 +1649,7 @@ function startPuzzle(lr) {
   lr.active = true;
   lr.progress = 0;
   lr.wallInset = 0;
-  for (const it of lr.items) { it.lit = false; it.pressed = false; }
+  for (const it of lr.items) { it.lit = false; it.pressed = false; it.ringT = 0; it.shake = 0; }
   setDoor(level, lr, false);
   resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
   pathing.invalidate();
@@ -1314,9 +1661,15 @@ function startPuzzle(lr) {
   }
   monsters = monsters.filter((m) => !m.remove);
   projectiles = [];
-  if (lr.key === "candles") {
+  const k = kindOf(lr);
+  if (k === "candles") {
     player.hasTaper = true;
     toast("The door slams shut. A lit taper waits in your hand.", 3);
+  } else if (k === "crypt") {
+    toast("The crypt door grinds shut. Five lids lie open…", 3);
+  } else if (k === "flood") {
+    grindTimer = 0;
+    toast("The door seals — black water starts pouring in!", 3);
   } else {
     grindTimer = 0;
     toast("The door slams shut — the walls begin to move!", 3);
@@ -1328,7 +1681,25 @@ function failPuzzleStep(lr) {
   lr.failCount += 1;
   lr.progress = 0;
   shake = Math.max(shake, 0.8);
-  if (lr.key === "candles") {
+  const k = kindOf(lr);
+  if (k === "crypt") {
+    for (const it of lr.items) { it.lit = false; it.shake = 0.6; }
+    sound.playSnuff();
+    sound.playCoffin(false);
+    toast("Wrong sleeper! Every lid slides open — and one of them climbs out…", 3);
+    const c = { x: (lr.room.x0 + lr.room.x1 + 1) / 2 * TILE_SIZE, y: (lr.room.y0 + lr.room.y1 + 1) / 2 * TILE_SIZE + TILE_SIZE };
+    const m = new Monster("skeleton", c.x, c.y);
+    m.timer = 0.8;
+    m.hp = m.maxHp = 22; // a frail one
+    monsters.push(m);
+    fx.push({ type: "mist", x: c.x, y: c.y });
+  } else if (k === "flood") {
+    for (const it of lr.items) it.pressed = false;
+    lr.wallInset = Math.min(1, lr.wallInset + 0.12);
+    sound.playSnuff();
+    sound.playSurge();
+    toast("Wrong bell! The bells fall silent — and the water surges!", 3);
+  } else if (k === "candles") {
     for (const it of lr.items) it.lit = false;
     sound.playSnuff();
     toast("Wrong hour — every flame gutters out. Something stirs in the smoke…", 3);
@@ -1373,6 +1744,33 @@ function pressPlate(it) {
   else toast(`The ${PUZZLE_GLYPHS[it.sym]} plate sinks into the floor. (${lr.progress}/${lr.order.length})`, 1.8);
 }
 
+function restCoffin(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "crypt" || it.lit) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 8, color: 0x8a9aa8 }); failPuzzleStep(lr); return; }
+  it.lit = true;
+  lr.progress += 1;
+  sound.playCoffin(true);
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.0, n: 12, color: 0xffc060 });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The lid marked ${PUZZLE_GLYPHS[it.sym]} slides shut. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+
+function ringBell(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "flood" || it.pressed) return;
+  it.ringT = 1.2;
+  const want = lr.order[lr.progress];
+  sound.playBell(it.sym);
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, h: 1.8, n: 10, color: 0x4aa0b0 }); failPuzzleStep(lr); return; }
+  it.pressed = true;
+  lr.progress += 1;
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.8, n: 12, color: 0xd8e0ea });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} bell tolls. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+
 function solvePuzzle(lr) {
   lr.solved = true;
   lr.active = false;
@@ -1385,7 +1783,7 @@ function solvePuzzle(lr) {
   const R = PUZZLE_REWARDS[lr.key];
   player.mirrors[R.tier] += 1;
   player.coins += R.coins;
-  if (lr.key === "candles") player.sanity = 100;
+  if (isOrderPuzzle(lr)) player.sanity = 100;
   else player.armor = 100;
   renderMirrorHud(false, R.tier);
   fx.push({ type: "pickup", x: player.x, y: player.y, color: 0xffd86a });
@@ -1406,8 +1804,20 @@ function updatePuzzles(dt) {
       if (inRoomRect(lr.room, player.x, player.y) && ty >= lr.room.y0 && player.y > lr.room.y0 * TILE_SIZE + player.radius + 2) startPuzzle(lr);
     }
     if (lr.key === "crush" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 130 * dt);
+    if (kindOf(lr) === "flood" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 0.5 * dt);
   }
   const lr = inPuzzle;
+  if (lr && kindOf(lr) === "flood") {
+    // Water rises to drowning depth over closeSecs.
+    lr.wallInset = Math.min(1, lr.wallInset + dt / lr.closeSecs);
+    grindTimer -= dt;
+    if (grindTimer <= 0) { grindTimer = 1.6; sound.playWater(); }
+    if (lr.wallInset >= 0.94) {
+      shake = 1.0;
+      handleDeath("The Drowned Mausoleum filled to the roof. The bells rang for you.");
+    }
+    return;
+  }
   if (!lr || lr.key !== "crush") return;
   const maxIn = crushMaxInset(lr);
   lr.wallInset = Math.min(maxIn, lr.wallInset + (maxIn / lr.closeSecs) * dt);
@@ -1424,6 +1834,7 @@ function updatePuzzles(dt) {
   }
 }
 
+function floodSecondsLeft(lr) { return Math.max(0, (0.94 - lr.wallInset) * lr.closeSecs); }
 function crushSecondsLeft(lr) {
   const maxIn = crushMaxInset(lr) - player.radius - 2;
   return Math.max(0, (maxIn - lr.wallInset) / (crushMaxInset(lr) / lr.closeSecs));
@@ -1436,7 +1847,16 @@ function updatePuzzleHud() {
   puzzleHud.classList.remove("hidden");
   puzzleHud.className = `puzzle-hud ${lr.key}`;
   puzzleTitle.textContent = lr.name.toUpperCase();
-  if (lr.key === "candles") {
+  if (kindOf(lr) === "crypt") {
+    puzzleInfo.textContent = `Coffins at rest ${lr.progress} / ${lr.order.length}`;
+    puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
+    puzzleHud.classList.remove("urgent");
+  } else if (kindOf(lr) === "flood") {
+    const secs = floodSecondsLeft(lr);
+    puzzleInfo.textContent = `Bells ${lr.progress} / ${lr.order.length} · water at ${Math.round(lr.wallInset * 100)}% · ${Math.ceil(secs)}s`;
+    puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset / 0.94) * 100}%`;
+    puzzleHud.classList.toggle("urgent", secs < 10);
+  } else if (lr.key === "candles") {
     puzzleInfo.textContent = `Candles lit ${lr.progress} / ${lr.order.length}`;
     puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
   } else {
@@ -1476,7 +1896,12 @@ const DEATH_BY = {
   ghoul: "The castle's ghouls dragged you down into the straw.",
   maiden: "A Blood Maiden's nails found your throat.",
   bats: "The bat swarm tore at you until the lantern fell.",
-  dweller: "The Well Dweller dragged you into the black water."
+  dweller: "The Well Dweller dragged you into the black water.",
+  skeleton: "The grave-risen pulled you down to lie among them.",
+  brute: "The Gravedigger's spade came down — and he began to dig.",
+  banshee: "The banshee's wail was the last thing you heard.",
+  slime: "The slime swallowed your lantern, then you.",
+  slimelet: "The slimes swarmed you in the dark."
 };
 
 // ---------------------------------------------------------------- update
@@ -1494,6 +1919,7 @@ function update(dt) {
   if (player.invuln > 0) player.invuln -= dt;
   if (player.speedBoost > 0) player.speedBoost = Math.max(0, player.speedBoost - dt);
   if (player.darkCurse > 0) player.darkCurse = Math.max(0, player.darkCurse - dt);
+  if (player.slowT > 0) player.slowT = Math.max(0, player.slowT - dt);
   if (boonTimer > 0) { boonTimer -= dt; if (boonTimer <= 0 && boonBanner) boonBanner.classList.add("hidden"); }
   shake = Math.max(0, shake - dt * 2.4);
   hurtFx = Math.max(0, hurtFx - dt * 2);
@@ -1509,7 +1935,8 @@ function update(dt) {
   if (!player.hidden && mag > 0.14) {
     const clampedMag = Math.min(1, mag);
     const nx = mx / mag, ny = my / mag;
-    const slow = (player.sanity < 25 ? 0.88 : 1) * (player.attackAnim > 0.5 && player.weapon === "mace" ? 0.6 : 1) * (player.speedBoost > 0 ? 1.5 : 1);
+    const slow = (player.sanity < 25 ? 0.88 : 1) * (player.attackAnim > 0.5 && player.weapon === "mace" ? 0.6 : 1) * (player.speedBoost > 0 ? 1.5 : 1)
+      * (player.slowT > 0 ? 0.55 : 1) * (inPuzzle && kindOf(inPuzzle) === "flood" ? 1 - 0.45 * inPuzzle.wallInset : 1);
     player.x += nx * player.speed * clampedMag * slow * dt;
     player.y += ny * player.speed * clampedMag * slow * dt;
     if (player.attackAnim < 0.3) player.angle = Math.atan2(ny, nx);
@@ -1533,7 +1960,7 @@ function update(dt) {
   if (player.inBrazier) {
     player.oil = Math.min(100, player.oil + 36 * dt);
     player.sanity = Math.min(100, player.sanity + 14 * dt);
-    player.health = Math.min(100, player.health + 4 * dt);
+    player.health = Math.min(player.maxHealth, player.health + 4 * dt);
   } else if (player.lanternOn) {
     player.oil = Math.max(0, player.oil - 1.35 * dt);
     if (player.oil <= 0) { player.lanternOn = false; sound.playDouse(false); }
@@ -1549,6 +1976,27 @@ function update(dt) {
       sound.playGlassCrunch();
       if (!countess.frozen) countess.alertAt(g.x, g.y);
       toast("CRACKED GLASS! The Countess heard you.");
+    }
+  }
+
+  // Grave hands (Stage II): open graves grab at anyone who walks too close.
+  if (level.graves && level.graves.length) {
+    for (const g of level.graves) {
+      if (g.cd > 0) g.cd -= dt;
+      const d = Math.hypot(g.x - player.x, g.y - player.y);
+      if (g.grab > 0) g.grab = Math.max(0, g.grab - dt * 0.7);
+      if (player.hidden || inPuzzle) continue;
+      if (d < 88 && g.grab < 0.22) g.grab = 0.22; // fingers peek over the edge — a warning
+      if (d < 50 && g.cd <= 0) {
+        g.grab = 1;
+        g.cd = 4;
+        sound.playHands();
+        fx.push({ type: "spark", x: g.x, y: g.y, h: 0.6, n: 12, color: 0x6a5a40 });
+        player.slowT = Math.max(player.slowT, 1.3);
+        damagePlayer(6, g.x, g.y, "Hands from an open grave dragged you down into the dirt.");
+        if (!warnedHands) { warnedHands = true; toast("HANDS FROM THE GRAVE! Give open graves a wide berth.", 3); }
+        if (mode !== "PLAYING") return;
+      }
     }
   }
 
@@ -1583,7 +2031,7 @@ function update(dt) {
   nearbyContext = null;
   let promptText = "";
   if (inPuzzle) {
-    let best = null, bd = inPuzzle.key === "candles" ? 50 : 54;
+    let best = null, bd = inPuzzle.key === "candles" ? 50 : kindOf(inPuzzle) === "crypt" ? 52 : kindOf(inPuzzle) === "flood" ? 58 : 54;
     for (const it of inPuzzle.items) {
       if (it.lit || it.pressed) continue;
       const d = Math.hypot(it.x - player.x, it.y - player.y);
@@ -1591,7 +2039,13 @@ function update(dt) {
     }
     if (best) {
       const name = PUZZLE_GLYPHS[best.sym];
-      if (inPuzzle.key === "candles") {
+      if (kindOf(inPuzzle) === "crypt") {
+        nearbyContext = { type: "coffin", obj: best };
+        promptText = `Tap REST — the coffin marked ${best.sym} (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (kindOf(inPuzzle) === "flood") {
+        nearbyContext = { type: "bell", obj: best };
+        promptText = `Tap RING — the ${name} bell (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (inPuzzle.key === "candles") {
         nearbyContext = { type: "candle", obj: best };
         promptText = `Tap LIGHT — candle marked ${name} (${inPuzzle.progress}/${inPuzzle.order.length} lit)`;
       } else {
@@ -1616,7 +2070,7 @@ function update(dt) {
   for (const p of level.pages) {
     if (!p.collected && Math.hypot(p.x - player.x, p.y - player.y) < 34) {
       nearbyContext = { type: "page", obj: p };
-      promptText = `Tap READ — ${p.lore.num}`;
+      promptText = level.stage === 2 ? `Tap RUB — ${p.lore.num}` : `Tap READ — ${p.lore.num}`;
       break;
     }
   }
@@ -1624,14 +2078,15 @@ function update(dt) {
     for (const a of level.alcoves) {
       if (Math.hypot(a.x - player.x, a.y - player.y) < 32) {
         nearbyContext = { type: "alcove", obj: a };
-        promptText = "Tap HIDE — Iron Alcove";
+        promptText = level.stage === 2 ? "Tap HIDE — Crypt Niche" : "Tap HIDE — Iron Alcove";
         break;
       }
     }
   }
   if (!nearbyContext && !player.hidden && level.well && Math.hypot(level.well.x - player.x, level.well.y - player.y) < 52) {
     nearbyContext = { type: "well", obj: level.well };
-    promptText = player.coins >= 5 ? "Tap TOSS — Offer 5 coins to the well" : "The well wants an offering (5 coins)";
+    const wn = level.well.fountain ? "black fountain" : "well";
+    promptText = player.coins >= 5 ? `Tap TOSS — Offer 5 coins to the ${wn}` : `The ${wn} wants an offering (5 coins)`;
   }
   if (!nearbyContext && !player.hidden) {
     for (const d of level.secrets) {
@@ -1645,9 +2100,15 @@ function update(dt) {
   }
   if (!nearbyContext && Math.hypot(level.exitTile.x - player.x, level.exitTile.y - player.y) < 60) {
     nearbyContext = { type: "exit", obj: level.exitTile };
-    promptText = player.pagesFound >= 5 ? "Portcullis Unsealed — Tap ESCAPE!" : `North Gate Sealed (${player.pagesFound}/5 Ledger Pages)`;
+    promptText = player.pagesFound >= 5
+      ? (level.stage === 2 ? "Gatehouse Open — Tap ESCAPE!" : "Portcullis Unsealed — Tap ESCAPE!")
+      : (level.stage === 2 ? `Gatehouse Sealed (${player.pagesFound}/5 Grave Rubbings)` : `North Gate Sealed (${player.pagesFound}/5 Ledger Pages)`);
   }
-  if (player.hidden) promptText = "Hidden in Iron Alcove — Tap EXIT to step out";
+  if (!nearbyContext && !player.hidden && level.merchant && Math.hypot(level.merchant.x - player.x, level.merchant.y - player.y) < 62) {
+    nearbyContext = { type: "merchant", obj: level.merchant };
+    promptText = `Tap SHOP — The Hooded Pedlar (◉${player.coins | 0})`;
+  }
+  if (player.hidden) promptText = level.stage === 2 ? "Hidden in a Crypt Niche — Tap EXIT to step out" : "Hidden in Iron Alcove — Tap EXIT to step out";
   else if (!promptText && player.inBrazier) promptText = "Warm Brazier — Mending Oil, Sanity & Wounds";
   if (promptText) { promptBanner.textContent = promptText; promptBanner.classList.remove("hidden"); }
   else promptBanner.classList.add("hidden");
@@ -1679,7 +2140,19 @@ function update(dt) {
       damagePlayer(m.type.dmg, m.x, m.y, DEATH_BY[m.kind]);
       if (m.type.drainsOil) player.oil = Math.max(0, player.oil - 6);
     },
-    onKilled: (m) => onMonsterKilled(m)
+    onKilled: (m) => onMonsterKilled(m),
+    onWail: (m) => {
+      // Banshee: sanity drain + a slowing chill. Hiding muffles it.
+      const d = Math.hypot(m.x - player.x, m.y - player.y);
+      sound.playWail();
+      fx.push({ type: "spark", x: m.x, y: m.y, h: 1.8, n: 16, color: 0xa8c8f0 });
+      if (player.hidden) return;
+      const k = Math.max(0.4, 1 - d / 190);
+      player.sanity = Math.max(0, player.sanity - 12 * k);
+      player.slowT = Math.max(player.slowT, 1.6);
+      shake = Math.max(shake, 0.5);
+      if (!warnedWail) { warnedWail = true; toast("A BANSHEE'S WAIL — it chills your blood and slows your legs. Kill her fast!", 3.2); }
+    }
   };
   for (const m of monsters) m.update(dt, level, player, pathing, cb);
   if (mode !== "PLAYING") return;
@@ -1730,7 +2203,7 @@ function update(dt) {
       for (const m of monsters) {
         if (m.dead || m.state === "RISE") continue;
         if (Math.hypot(m.x - p.x, m.y - p.y) < m.radius + 6) {
-          if (m.hit(w.dmg, p.x - p.vx * 0.05, p.y - p.vy * 0.05, w.knock)) {
+          if (m.hit(w.dmg * dmgMul(), p.x - p.vx * 0.05, p.y - p.vy * 0.05, w.knock)) {
             fx.push({ type: "spark", x: m.x, y: m.y, n: 10 });
             fx.push({ type: "blood", x: m.x, y: m.y });
             sound.playHit(false);
@@ -1783,8 +2256,8 @@ function update(dt) {
     const d = Math.hypot(m.x - player.x, m.y - player.y);
     if (d < 140) monsterDanger = Math.max(monsterDanger, 0.35 * (1 - d / 140));
   }
-  danger = Math.max(danger, monsterDanger, (1 - player.health / 100) * 0.4);
-  if (player.sanity <= 0) { handleDeath("Your mind fractured inside the dark stones of Csejte."); return; }
+  danger = Math.max(danger, monsterDanger, (1 - player.health / player.maxHealth) * 0.4);
+  if (player.sanity <= 0) { handleDeath(level.stage === 2 ? "Your mind came apart in the graveyard fog." : "Your mind fractured inside the dark stones of Csejte."); return; }
 
   dangerVignette.style.opacity = (danger * 0.85).toFixed(2);
   const lowSanity = Math.max(0, (38 - player.sanity) / 38);
@@ -1817,6 +2290,7 @@ renderer3d.setLevel(level);
 countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour, pathing);
 buildWeaponGrid();
 renderMirrorHud(true);
+refreshTitleStages();
 
 // QA hook (only with ?qa in the URL)
 if (new URLSearchParams(location.search).has("qa")) {
@@ -1878,7 +2352,39 @@ if (new URLSearchParams(location.search).has("qa")) {
     closeLore() { screenLore.classList.add("hidden"); if (mode === "LORE") mode = "PLAYING"; },
     pickWeapon(id) { closeTokenPicker(); swapWeapon(id); },
     hurt(n) { player.invuln = 0; damagePlayer(n, player.x, player.y + 10, "QA"); return [player.health, player.armor]; },
-    newRun: () => startNewRun(),
+    newRun: () => startNewRun(1),
+    // ---- v0.6
+    startStage(n = 2, carryCoins = null) {
+      if (n === 2) { stage2Unlocked = true; lsSet(LS_S2, true); }
+      startNewRun(n);
+      if (carryCoins !== null) { player.coins = carryCoins; runStartCoins = carryCoins; }
+      return level.stage;
+    },
+    get stage() { return currentStage; },
+    renderer: renderer3d,
+    get upgrades() { return { ...upgrades }; },
+    get purse() { return loadPurse(); },
+    set purse(v) { savePurse(v); },
+    get stage2Unlocked() { return stage2Unlocked; },
+    resetProgress() { upgrades = { heart: 0, edge: 0, wick: 0, glass: 0 }; lsSet(LS_UP, upgrades); savePurse(0); stage2Unlocked = false; lsSet(LS_S2, false); refreshTitleStages(); },
+    setCoins(n) { player.coins = n; if (hudCoinVal) hudCoinVal.textContent = String(n); },
+    openShop: (ctx = "field") => openShop(ctx),
+    closeShop: () => closeShop(),
+    shopSelect(key) { const el = document.querySelector(`#screen-shop [data-key="${key}"]`); if (el) el.click(); return shopSel; },
+    shopConfirm() { $("btn-shop-buy").click(); return $("shop-feedback").textContent; },
+    get shopFeedback() { return $("shop-feedback").textContent; },
+    clearStage() { if (mode !== "PLAYING") mode = "PLAYING"; player.pagesFound = 5; handleWin(); return mode; },
+    enterStage2: () => enterStage2(),
+    get graves() { return level.graves; },
+    get maxHealth() { return player.maxHealth; },
+    puzzleAct(sym) {
+      const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym);
+      if (!it) return -1;
+      const k = kindOf(inPuzzle);
+      if (k === "crypt") restCoffin(it); else if (k === "flood") ringBell(it); else if (k === "candles") lightCandle(it); else pressPlate(it);
+      return inPuzzle ? inPuzzle.progress : 99;
+    },
+    set waterLevel(v) { if (inPuzzle) inPuzzle.wallInset = v; },
     get boon() { return boonBanner.classList.contains("hidden") ? null : boonTitle.textContent; },
     set wellTimer(v) { wellTimer = v; }
   };
@@ -1893,3 +2399,13 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// ?qa&stage=2 — jump straight into the Graveyards (QA only).
+{
+  const qs = new URLSearchParams(location.search);
+  if (qs.has("qa") && qs.get("stage") === "2") {
+    stage2Unlocked = true;
+    lsSet(LS_S2, true);
+    setTimeout(() => { pendingStage = 2; startNewRun(2); }, 50);
+  }
+}

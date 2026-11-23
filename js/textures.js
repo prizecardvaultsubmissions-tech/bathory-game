@@ -331,5 +331,72 @@ export function makeTextures() {
     for (let x = 1; x < 7; x++) if (Math.abs(x - 3.5) < 2.5) set(x, 1, 230, 200, 120);
   });
 
+  // ---------- Stage II: graveyard surfaces ----------
+  T.grass = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(201);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = (r() - 0.5) * 18;
+      const blade = r() < 0.18;
+      if (blade) set(x, y, 66 + n, 92 + n, 54 + n);
+      else set(x, y, 46 + n, 60 + n, 42 + n);
+    }
+    for (let i = 0; i < 26; i++) set(Math.floor(r() * 32), Math.floor(r() * 32), 70, 62, 48); // dead patches
+  });
+  T.dirt = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(202);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = (r() - 0.5) * 16;
+      set(x, y, 68 + n, 56 + n, 48 + n);
+    }
+    for (let i = 0; i < 30; i++) { const x = Math.floor(r() * 32), y = Math.floor(r() * 32); set(x, y, 84, 80, 76); set(x + 1, y, 64, 60, 58); } // pebbles
+    for (let i = 0; i < 14; i++) set(Math.floor(r() * 32), Math.floor(r() * 32), 40, 58, 34);
+  });
+  T.boneFloor = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(203);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const n = (r() - 0.5) * 14; set(x, y, 46 + n, 38 + n, 34 + n); }
+    for (let i = 0; i < 16; i++) {
+      const x0 = Math.floor(r() * 30), y0 = Math.floor(r() * 30), horiz = r() < 0.5, len = 3 + Math.floor(r() * 5);
+      for (let k = 0; k < len; k++) { const x = horiz ? x0 + k : x0, y = horiz ? y0 : y0 + k; set(x, y, 214, 204, 176); }
+      set(x0 - 1, y0, 230, 222, 196); set(horiz ? x0 + len : x0, horiz ? y0 : y0 + len, 230, 222, 196);
+    }
+    for (let i = 0; i < 4; i++) { const x = Math.floor(r() * 28) + 2, y = Math.floor(r() * 28) + 2; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) set(x + dx, y + dy, 222, 214, 190); set(x - 1, y, 20, 16, 16); set(x + 1, y, 20, 16, 16); }
+  });
+  T.flag = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(204);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const grout = x % 16 === 15 || y % 16 === 15 || (y % 16 === 7 && x % 16 < 9);
+      const n = (r() - 0.5) * 14;
+      if (grout) set(x, y, 30 + n * 0.4, 40 + n * 0.4, 30);
+      else set(x, y, 74 + n, 76 + n, 80 + n);
+    }
+    for (let i = 0; i < 24; i++) set(Math.floor(r() * 32), Math.floor(r() * 32), 44, 66, 40);
+  });
+  T.moss = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(205);
+    for (let y = 0; y < h; y++) {
+      const row = Math.floor(y / 8), off = row % 2 ? 8 : 0;
+      for (let x = 0; x < w; x++) {
+        const mortar = y % 8 === 7 || (x + off) % 16 === 15;
+        const n = (r() - 0.5) * 16;
+        if (mortar) set(x, y, 28, 32, 30);
+        else if (r() < (y < 10 ? 0.35 : 0.12)) set(x, y, 46 + n, 70 + n, 40 + n);
+        else set(x, y, 86 + n, 88 + n, 94 + n);
+      }
+    }
+  });
+  T.mossTop = makeCanvasTex(16, 16, (set, w, h) => {
+    const r = seeded(206);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const n = (r() - 0.5) * 18; set(x, y, 50 + n, 70 + n, 44 + n); }
+  });
+  // Wrought-iron fence panel (alpha cut-out): spear-topped bars and two rails.
+  T.fence = makeCanvasTex(32, 32, (set, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x, y, 0, 0, 0, 0);
+    for (let bx = 2; bx < 32; bx += 6) {
+      for (let y = 5; y < 32; y++) { set(bx, y, 34, 32, 38); set(bx + 1, y, 18, 16, 22); }
+      set(bx, 4, 40, 36, 44); set(bx + 1, 4, 40, 36, 44); set(bx, 3, 30, 28, 34); set(bx + 1, 2, 30, 28, 34); set(bx - 1, 5, 30, 28, 34); set(bx + 2, 5, 30, 28, 34);
+    }
+    for (const ry of [9, 26]) for (let x = 0; x < 32; x++) { set(x, ry, 30, 28, 34); set(x, ry + 1, 16, 14, 18); }
+  });
+
   return T;
 }

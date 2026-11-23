@@ -39,3 +39,33 @@ export const CURSE_ALERTS = [
   "A wax seal cracked behind the North Portcullis.",
   "Your fallen lantern is still burning in the Outer Ward."
 ];
+
+// Stage II — charcoal rubbings taken from the graves outside Csejte (original fiction on the public-domain legend).
+export const GRAVE_RUBBINGS = [
+  {
+    num: "GRAVE RUBBING I",
+    title: "The Unmarked Row",
+    body: "Charcoal on linen, lifted from a stone with no name. Only a date — 1609 — and a line scratched beneath it by a careless chisel: \u201cBrought up from the castle by night, so the village would not count the coffins.\u201d"
+  },
+  {
+    num: "GRAVE RUBBING II",
+    title: "The Sexton's Complaint",
+    body: "The sexton of Csejte wrote to the parish that he would bury no more girls without a priest. The next spring his own stone was raised in the orchard, facing away from the church, as if the dead had turned their backs on him."
+  },
+  {
+    num: "GRAVE RUBBING III",
+    title: "Bell Without a Tongue",
+    body: "The mausoleum bells were cast for weddings and christenings. After 1610 the clappers were pulled and buried in the bone pit. People still swear they hear them ring on nights when the fog comes up from the river."
+  },
+  {
+    num: "GRAVE RUBBING IV",
+    title: "A Name Scraped Off",
+    body: "Someone took a knife to this epitaph and gouged out the family name. What remains reads: \u201c\u2014 served the Lady faithfully, and was rewarded.\u201d The rubbing comes up darker every time you look at it."
+  },
+  {
+    num: "GRAVE RUBBING V",
+    title: "The Gatehouse Stone",
+    body: "Set into the gatehouse threshold, worn smooth by four hundred years of boots: \u201cWhoever carries these names out of the yard carries the yard with them.\u201d Behind you, the Countess has stopped walking. She is listening.",
+    witchingPostscript: "WITCHING HOUR NOTE: The graveyard fog reads your clock too. It is thicker after midnight."
+  }
+];

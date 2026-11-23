@@ -24,7 +24,7 @@ You install an unarchived horror build recovered from an estate drive—a top-do
 
 ---
 
-## 3. Core Gameplay Loop (v0.5 "Crates, Keys & Chambers")
+## 3. Core Gameplay Loop (v0.6 "The Pedlar & The Graveyards")
 
 1. **Choose Your Arms:** Every run starts at the *Armory of Csejte*. Pick one of four original weapons (table below). Your pick is remembered, and RETRY keeps it.
 2. **Explore Six Wings:** The castle is now one large connected map, about 5x the v0.2 footprint (58x46 = 2,668 tiles vs. 26x20 = 520; 1,584 walkable vs. 359). It covers the Outer Ward, the Chapel of St. Ladislaus, the Kitchens & Cellars, the Great Hall, the Torture Gallery and the North Gate Court. Each wing has its own floor, dressing and fixed cinematic camera angle, plus an area title card as you enter.
@@ -62,8 +62,39 @@ Attacks auto-aim at the nearest servant in reach. Hold **ATTACK** to keep swingi
 | Coin pouch | 23% | 26% | +6–13 coins (ghouls +12–20). Banked on the HUD. Toss 5 into the well for a random boon, curse, or Well Dweller. A later shop may still use them. |
 | Mirror | 12% | 18% | Weighted by tier: Cracked ~70% (60% from ghouls), Silver ~22% (26%), Gilded ~7% (11%), Obsidian ~1% (3%). |
 
-### Coins
-A run starts at 0. Pouches add to a **COINS** counter in the HUD (and on the death/win screens). Spend 5 at the well for a coin toss (below); the puzzle chambers also pay out coins. A later shop or upgrades can still use them.
+### Coins & the Purse (v0.6)
+Pouches add to the **◉ COINS** counter. Coins buy coin tosses at the well/fountain, items and upgrades from the Hooded Pedlar, and the puzzle chambers pay out coins.
+
+**Persistence rule:** your coins are kept in a **purse** saved on the device (`localStorage`).
+- A new run starts with the whole purse.
+- **Clearing Stage I** carries everything into Stage II: coins, weapon, bolts, mirrors, armor and any active speed boost. The purse is saved at that moment.
+- **On death (or quitting to the title):** if you finished with at least as many coins as you started with, you keep your starting coins plus **half of what you gained** (rounded down). If you spent below your starting amount, you keep what you have left. The death screen shows **PURSE KEPT**.
+- Permanent upgrades are never lost.
+
+### The Hooded Pedlar — Power-Up Shop (v0.6)
+A hooded merchant with glowing eyes, a lamp and a stall of bottles stands in each stage: Stage I in the Outer Ward's south-east corner by the brazier, and Stage II by the Chapel Graveyard's south gate near the start. Walk up and tap **SHOP**. The game pauses. The shop also opens **between stages** from the Stage I clear screen ("Visit the Hooded Pedlar"). Tap an item to select it, then confirm with **BUY**. If you can't afford it, the tile shakes, a deny sound plays, and the shop shows "Not enough coins — X costs ◉N, you have ◉M."
+
+| Item | Price | Effect |
+| :--- | ---: | :--- |
+| ✚ Health Draught | 12 | +50 health (in-stage only) |
+| ✺ Sanity Salts | 10 | +40 sanity (in-stage only) |
+| ♨ Lamp Oil | 8 | Refill the lantern (in-stage only) |
+| ⛨ Armor Plate | 15 | +35 armor (max 100) |
+| ◐ Cracked Mirror | 15 | 3s freeze |
+| ◯ Silver Mirror | 32 | 6s freeze |
+| ✦ Gilded Mirror | 60 | 10s freeze |
+| ➶ Silver Bolts ×8 | 10 | Crossbow only |
+| ⚡ Speed Tonic | 12 | ×1.5 speed for 15s |
+| ⚔ Weapon Swap | 20 | Opens the weapon picker. Refunded if you keep your weapon |
+
+**Permanent upgrades** (3 levels each, saved on the device, apply to every future run):
+
+| Upgrade | Lv1 / Lv2 / Lv3 | Effect per level |
+| :--- | :--- | :--- |
+| ♥ Iron Heart | 50 / 80 / 120 | +15 max health |
+| ⚒ Whetstone | 50 / 80 / 120 | +12% weapon damage |
+| ☼ Wider Wick | 40 / 70 / 100 | +12% lantern reach |
+| ❖ Silvered Glass | 60 / 90 / 130 | +1s on every mirror freeze |
 
 ### Mirrors (freeze the Countess)
 | Tier | Freeze | Placed in castle | Extra |
@@ -139,7 +170,7 @@ Reward: Obsidian mirror, 40 coins, armor to 100. The walls retract and the door 
 The minimap shows both chambers (darkened until unlocked) and colors each door red (locked), blinking gold (you hold its key), gold (unlocked) or green (solved).
 
 ### Health
-100 HP. Monster strikes deal damage, with a short invulnerability window and knockback. Braziers mend +4 HP/s. Reaching 0 HP ends the run with a monster-specific death line.
+100 HP (+15 per Iron Heart level). Monster strikes deal damage, with a short invulnerability window and knockback. Braziers mend +4 HP/s. Reaching 0 HP ends the run with a monster-specific death line.
 
 ---
 
@@ -177,6 +208,43 @@ The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 5 placed 
 Future chapters (design targets): the Silver Cisterns & Bathhouse (steam halves lantern range), the Iron Undercroft (pressure plates) and the Brick-Walled Tower finale.
 
 ---
+
+## 5b. Stage II — The Graveyards (v0.6)
+Clearing Stage I (five ledger pages, then the North Gate) unlocks Stage II. A moonlit transition screen shows your time, kills and purse, with buttons to enter, visit the Pedlar, or return to the title. Entering shows a "STAGE II · THE GRAVEYARDS" title card. The title screen then offers **CONTINUE · STAGE II** and a stage select.
+
+**Look:** open-air PS1 graveyard. A large moon is drawn in the sky, with blue-grey fog, drifting mist motes, circling crows, low mossy walls and iron fences, crooked tombstones, crosses, mausoleums, dead trees, open graves, bone piles and a weeping angel. Coffins and urns replace crates and barrels; urns break in 2 hits and coffins in 3, with the same loot table. The cursed **black fountain** in the Chapel Graveyard works like the well: 5 coins for a boon, curse or Well Dweller.
+
+**Six areas:** The Gatehouse (north exit), Mausoleum Row, Crypt Entrance (where the Countess rises), The Dead Orchard, The Bone Pit, and the Chapel Graveyard (start, fountain, Pedlar).
+
+**Goal:** collect **5 grave rubbings** (original epitaph texts), then reach the Gatehouse road in the north to finish.
+
+**Secrets:** the *Weeping Angel Passage* (search the angel by the Chapel Graveyard's west wall to open a path into Mausoleum Row) and the *Ossuary Crawl* (a skull in the Bone Pit's west wall).
+
+**New monsters:**
+| Monster | HP | Speed (wander/chase) | Damage | Notes |
+| :--- | ---: | :--- | ---: | :--- |
+| Grave-Risen (skeleton) | 36 | 46 / 84 | 10 | Claws up out of the ground (1.4s rise) |
+| Gravedigger Brute | 95 | 28 / 54 | 22 | Slow, heavy spade swing, long reach. Better drops |
+| Wailing Banshee | 30 | floats | 7 | When it can see you within ~4 tiles, it wails every 5.5–8s: −12 sanity, slowed 1.6s, screen ripple |
+
+Spawn mix: in the first minute, 60% skeleton, 25% banshee and 15% brute; after that, 45% / 30% / 25%. Keys still drop at 15 and 30 kills. The Countess and all mirror rules still apply.
+
+**New hazard — Grave Hands:** 10 open graves. Within ~2 tiles, fingers peek out as a warning. Step closer and hands grab you for 6 damage, slowing you for 1.3s (4s cooldown per grave).
+
+### Stage II Puzzle Chambers
+**Chamber I — The Crypt of Names (Key I, Mausoleum Row south door).** Five sarcophagi with brass plaques bearing Roman-numeral years. Tap **REST** at each coffin to close its lid. A key to the numerals is printed under the riddle. A wrong coffin throws every lid open again, and a frail Grave-Risen climbs out.
+> Here the household of the Lady sleeps, / each lid cut with the year it fell. / Lay them to rest as the ground received them: / the first to fall is the first to sleep, / and the last to fall shuts the crypt.
+>
+> **Answer (oldest to newest):** MDLXXV (1575) → MDXC (1590) → MDCIV (1604) → MDCX (1610) → MDCXIV (1614).
+
+Reward: Gilded mirror, 35 coins, sanity restored to 100.
+
+**Chamber II — The Drowned Bells (Key II, Crypt Entrance south door).** Four bells: iron, bone, silver and bronze. The water rises from the moment you enter and fills the room in about 45s. A wrong bell resets the sequence and surges the water. If the water reaches the roof, you drown.
+> A child is christened under silver; / a bride is wed beneath the bronze; / a soldier marches to the iron; / and bone tolls once, when all is gone. / Ring a life from font to grave. / The water will not wait for you.
+>
+> **Answer:** SILVER → BRONZE → IRON → BONE.
+
+Reward: Obsidian mirror, 45 coins, armor to 100. The water drains.
 
 ## 6. Enemies & Countess AI
 

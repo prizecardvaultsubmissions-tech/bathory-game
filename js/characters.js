@@ -264,6 +264,97 @@ export function buildMonster(kind, T, psx) {
     rig.torso = body;
     rig.hideEyes = true;
     rig.eyeY = 0.55; rig.eyeZ = 0.85; rig.eyeColor = 0xc8e8d8; rig.barY = 0.95;
+  } else if (kind === "skeleton") {
+    // Original grave-risen: yellowed bones, a scrap of burial shroud, dirt still on the skull.
+    const bone = M({ color: 0xd8ccaa });
+    const dark = M({ color: 0x2a2018 });
+    const shroud = M({ map: T.rags, alphaTest: 0.5, color: 0x9a9480 });
+    const torso = pivot(body, 0, 0.8, 0);
+    torso.rotation.x = 0.18;
+    add(torso, box(0.06, 0.62, 0.06), bone, 0, 0.3, -0.04); // spine
+    for (let i = 0; i < 4; i++) add(torso, box(0.42 - i * 0.04, 0.05, 0.24), bone, 0, 0.5 - i * 0.11, 0.02); // ribs
+    add(torso, box(0.3, 0.1, 0.2), bone, 0, -0.02, 0); // pelvis
+    add(torso, box(0.46, 0.4, 0.05), shroud, 0, 0.3, -0.16);
+    const skull = pivot(torso, 0, 0.78, 0.04);
+    add(skull, box(0.3, 0.3, 0.32), bone, 0, 0, 0);
+    add(skull, box(0.22, 0.08, 0.2), bone, 0, -0.18, 0.05); // jaw
+    add(skull, box(0.08, 0.08, 0.02), dark, -0.07, 0.02, 0.16);
+    add(skull, box(0.08, 0.08, 0.02), dark, 0.07, 0.02, 0.16);
+    rig.legs = [];
+    for (const sx of [-0.11, 0.11]) {
+      const hip = pivot(body, sx, 0.78, 0);
+      add(hip, box(0.07, 0.4, 0.07), bone, 0, -0.2, 0);
+      add(hip, box(0.06, 0.38, 0.06), bone, 0, -0.58, 0);
+      add(hip, box(0.1, 0.05, 0.18), bone, 0, -0.77, 0.05);
+      rig.legs.push(hip);
+    }
+    for (const sx of [-0.27, 0.27]) {
+      const sh = pivot(torso, sx, 0.55, 0);
+      add(sh, box(0.06, 0.4, 0.06), bone, 0, -0.2, 0);
+      add(sh, box(0.05, 0.36, 0.05), bone, 0, -0.56, 0);
+      add(sh, box(0.1, 0.1, 0.04), bone, 0, -0.78, 0);
+      rig.arms.push(sh);
+    }
+    rig.torso = torso;
+    rig.eyeY = 1.62; rig.eyeZ = 0.3; rig.eyeColor = 0x7ad8ff; rig.barY = 2.0;
+  } else if (kind === "brute") {
+    // Original gravedigger brute: huge, sack-hooded, leather apron, an iron spade.
+    const flesh = M({ color: 0x8a7a6a });
+    const sack = M({ color: 0x6a5a40 });
+    const apron = M({ color: 0x3a2618 });
+    const iron = M({ color: 0x5a5a62 });
+    const wood = M({ map: T.wood });
+    const torso = pivot(body, 0, 1.0, 0);
+    torso.rotation.x = 0.3;
+    add(torso, box(0.95, 0.85, 0.6), flesh, 0, 0.42, 0);
+    add(torso, box(0.98, 0.9, 0.08), apron, 0, 0.3, 0.32);
+    add(torso, box(0.42, 0.46, 0.42), sack, 0, 1.02, 0.12); // hooded head
+    add(torso, box(0.2, 0.06, 0.02), M({ color: 0x0a0606 }), 0, 1.0, 0.34);
+    rig.legs = [];
+    for (const sx of [-0.25, 0.25]) {
+      const hip = pivot(body, sx, 1.0, 0);
+      add(hip, box(0.3, 1.0, 0.32), apron, 0, -0.5, 0);
+      rig.legs.push(hip);
+    }
+    for (const sx of [-0.62, 0.62]) {
+      const sh = pivot(torso, sx, 0.75, 0);
+      add(sh, box(0.28, 0.9, 0.28), flesh, 0, -0.45, 0);
+      add(sh, box(0.3, 0.22, 0.3), flesh, 0, -0.96, 0.02);
+      rig.arms.push(sh);
+    }
+    // spade in the right hand
+    const spade = pivot(rig.arms[1], 0, -0.98, 0.1);
+    add(spade, box(0.07, 1.5, 0.07), wood, 0, 0, 0.3).rotation.x = Math.PI / 2;
+    add(spade, box(0.4, 0.04, 0.5), iron, 0, 0, 1.2);
+    rig.torso = torso;
+    rig.eyeY = 2.04; rig.eyeZ = 0.62; rig.eyeColor = 0xff8a30; rig.barY = 2.7;
+  } else if (kind === "banshee") {
+    // Original wailing spirit: a floating veil of torn grey-blue grave cloth, no legs, mouth a black slot.
+    const veil = M({ color: 0xb8c8e0, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+    const pale = M({ color: 0xe8f0ff, emissive: 0x203040 });
+    const hair = M({ color: 0x1a1c24 });
+    const mouth = M({ color: 0x020204 });
+    const float = pivot(body, 0, 0.6, 0);
+    add(float, new THREE.ConeGeometry(0.42, 1.3, 7, 1, true), veil, 0, 0.35, 0).rotation.x = Math.PI;
+    add(float, box(0.3, 0.36, 0.28), pale, 0, 1.15, 0.02);
+    add(float, box(0.36, 0.5, 0.1), hair, 0, 1.08, -0.15);
+    const jaw = add(float, box(0.12, 0.16, 0.02), mouth, 0, 1.02, 0.17);
+    rig.jaw = jaw;
+    rig.tatters = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const tp = pivot(float, Math.cos(a) * 0.36, -0.25, Math.sin(a) * 0.36);
+      add(tp, box(0.12, 0.5, 0.02), veil, 0, -0.25, 0).rotation.y = -a;
+      rig.tatters.push(tp);
+    }
+    for (const sx of [-0.3, 0.3]) {
+      const sh = pivot(float, sx, 0.95, 0.05);
+      add(sh, box(0.07, 0.7, 0.07), pale, 0, -0.35, 0);
+      add(sh, box(0.2, 0.5, 0.02), veil, sx > 0 ? 0.08 : -0.08, -0.3, -0.03);
+      rig.arms.push(sh);
+    }
+    rig.float = float;
+    rig.eyeY = 1.8; rig.eyeZ = 0.2; rig.eyeColor = 0x9ad8ff; rig.barY = 2.3;
   } else if (kind === "slime" || kind === "slimelet") {
     // Original crate slime: a quivering low-poly blob of clotted red with a sickly green core.
     const k = kind === "slime" ? 1 : 0.62;

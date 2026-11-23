@@ -1,4 +1,5 @@
 import { LEDGER_PAGES } from "./lore.js";
+import { STAGE2 } from "./stage2.js";
 
 export const TILE_SIZE = 44;
 export const COLS = 58;
@@ -101,7 +102,9 @@ export const LOCKED_ROOMS = [
 
 export const PUZZLE_GLYPHS = {
   sun: "SUN", bell: "BELL", rose: "ROSE", key: "KEY", moon: "MOON", skull: "SKULL",
-  air: "AIR", fire: "FIRE", water: "WATER", earth: "EARTH"
+  air: "AIR", fire: "FIRE", water: "WATER", earth: "EARTH",
+  MDLXXV: "MDLXXV (1575)", MDXC: "MDXC (1590)", MDCIV: "MDCIV (1604)", MDCX: "MDCX (1610)", MDCXIV: "MDCXIV (1614)",
+  silver: "SILVER", bronze: "BRONZE", iron: "IRON", bone: "BONE"
 };
 
 const FEATURES = {
@@ -167,21 +170,33 @@ export const SECRET_DOORS = [
 
 export const MIRROR_ORDER = ["obsidian", "gilded", "silver", "cracked"];
 
-function rawGrid() {
+function rawGrid(def) {
   const g = [];
   for (let y = 0; y < ROWS; y++) g.push(new Array(COLS).fill(1));
   const carve = (x0, y0, x1, y1, v = 0) => {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = v;
   };
-  for (const r of ROOMS) carve(r.x0, r.y0, r.x1, r.y1);
-  for (const c of CORRIDORS) carve(...c);
-  for (const [x, y] of PILLARS) carve(x, y, x + 1, y + 1, 1);
-  for (const p of PARTITIONS) carve(...p, 1);
+  for (const r of def.rooms) carve(r.x0, r.y0, r.x1, r.y1);
+  for (const c of def.corridors) carve(...c);
+  for (const [x, y] of def.pillars || []) carve(x, y, x + 1, y + 1, 1);
+  for (const p of def.partitions || []) carve(...p, 1);
   return g;
 }
 
-export function createLevel() {
-  const grid = rawGrid();
+const STAGE1 = {
+  stage: 1, title: "Csejte Castle", collect: "Ledger Pages", collectShort: "LEDGER",
+  rooms: ROOMS, corridors: CORRIDORS, pillars: PILLARS, partitions: PARTITIONS,
+  props: PROP_DEFS, features: FEATURES, breakables: BREAKABLE_DEFS,
+  locked: LOCKED_ROOMS, secrets: SECRET_DOORS, lore: LEDGER_PAGES,
+  merchant: [54, 39]
+};
+export const STAGES = { 1: STAGE1, 2: STAGE2 };
+
+export function createLevel(stageNo = 1) {
+  const def = STAGES[stageNo] || STAGE1;
+  const ROOMS = def.rooms, PROP_DEFS = def.props, FEATURES = def.features;
+  const BREAKABLE_DEFS = def.breakables, LOCKED_ROOMS = def.locked, SECRET_DOORS = def.secrets;
+  const grid = rawGrid(def);
   const center = (tx, ty) => ({ x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
 
   const props = [];
@@ -194,13 +209,13 @@ export function createLevel() {
   const center0 = (tx, ty) => ({ x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
   const breakables = BREAKABLE_DEFS.map(([type, tx, ty], i) => {
     grid[ty][tx] = 3;
-    return { id: i, type, tx, ty, ...center0(tx, ty), hp: type === "barrel" ? 2 : 3, maxHp: type === "barrel" ? 2 : 3, broken: false, hitT: 0 };
+    return { id: i, type, tx, ty, ...center0(tx, ty), hp: (type === "barrel" || type === "urn") ? 2 : 3, maxHp: (type === "barrel" || type === "urn") ? 2 : 3, broken: false, hitT: 0 };
   });
   const lockedRooms = LOCKED_ROOMS.map((d) => {
     const room = ROOMS.find((r) => r.key === d.key);
     const [dx, dy] = d.door;
     grid[dy][dx] = 1;
-    const items = (d.candles || d.plates).map(([sym, tx, ty], i) => {
+    const items = (d.candles || d.plates || d.items).map(([sym, tx, ty], i) => {
       grid[ty][tx] = 3;
       return { i, sym, tx, ty, ...center0(tx, ty), lit: false, pressed: false };
     });
@@ -218,15 +233,18 @@ export function createLevel() {
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) roomGrid[y * COLS + x] = i;
   });
 
-  const pages = FEATURES.pages.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false, lore: LEDGER_PAGES[i] }));
+  const pages = FEATURES.pages.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false, lore: def.lore[i] }));
   const alcoves = FEATURES.alcoves.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
   const braziers = FEATURES.braziers.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
   const glass = FEATURES.glass.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty), cooldown: 0 }));
   const mirrors = FEATURES.mirrors.map(([tier, tx, ty], i) => ({ id: i, tier, tx, ty, ...center(tx, ty), collected: false }));
   const bolts = FEATURES.bolts.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false }));
   const spawns = FEATURES.spawns.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
-  const wellTile = PROP_DEFS.well[0];
-  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile) };
+  const wellTile = (PROP_DEFS.well || PROP_DEFS.fountain)[0];
+  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile), fountain: !PROP_DEFS.well };
+  const merchant = def.merchant ? { tx: def.merchant[0], ty: def.merchant[1], ...center(...def.merchant) } : null;
+  if (merchant) grid[merchant.ty][merchant.tx] = 3;
+  const graves = (PROP_DEFS.grave || []).map(([tx, ty], i) => ({ i, tx, ty, ...center(tx, ty), grab: 0, cd: 1 + i * 0.37 }));
   const secrets = SECRET_DOORS.map((d) => ({
     ...d,
     itemX: center(d.itemTx, d.itemTy).x,
@@ -236,6 +254,12 @@ export function createLevel() {
   }));
 
   return {
+    stage: def.stage,
+    title: def.title,
+    collect: def.collect,
+    collectShort: def.collectShort,
+    merchant,
+    graves,
     rows: ROWS,
     cols: COLS,
     width: COLS * TILE_SIZE,

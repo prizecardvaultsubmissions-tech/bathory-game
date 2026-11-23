@@ -96,7 +96,7 @@ class Batcher {
     if (!this.lists.has(mat)) this.lists.set(mat, []);
     this.lists.get(mat).push(g);
   }
-  box(mat, w, h, d, x, y, z, ry = 0) { this.add(new THREE.BoxGeometry(w, h, d), mat, x, y, z, 0, ry, 0); }
+  box(mat, w, h, d, x, y, z, ry = 0, rx = 0, rz = 0) { this.add(new THREE.BoxGeometry(w, h, d), mat, x, y, z, rx, ry, rz); }
   cyl(mat, rt, rb, h, seg, x, y, z) { this.add(new THREE.CylinderGeometry(rt, rb, h, seg), mat, x, y, z); }
   build(scene, shadows = true) {
     for (const [mat, list] of this.lists) {
@@ -120,6 +120,15 @@ const CAM_OFFSETS = {
   north: [2.2, 8.2, 6.8],
   candles: [0.0, 12.0, 8.4], // fixed, framed on the chamber centre
   crush: [0.0, 12.0, 7.6],
+  // Stage II yards (low fences: a slightly higher, more open view)
+  gatehouse: [0.0, 8.4, 7.2],
+  mausoleum: [-1.6, 8.6, 6.8],
+  cryptyard: [1.6, 8.6, 6.8],
+  orchard: [-1.6, 8.6, 6.8],
+  bonepit: [1.6, 8.6, 6.8],
+  chapelyard: [0.0, 8.2, 7.2],
+  crypt: [0.0, 11.0, 7.6],
+  flood: [0.0, 11.0, 7.2],
   doorway: [0.0, 7.4, -5.6] // looking south at the sealed chamber doors
 };
 
@@ -176,7 +185,29 @@ function glyphTexture(sym, color = "#ffd86a", bg = "#2a2018") {
     case "I": case "II":
       g.font = "bold 30px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(sym, 32, 34);
       break;
+    case "silver": case "bronze": case "iron": case "bone": {
+      const col = { silver: "#e8eef6", bronze: "#d08a48", iron: "#8a8a96", bone: "#efe2bc" }[sym];
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(18, 44); g.quadraticCurveTo(20, 14, 32, 13); g.quadraticCurveTo(44, 14, 46, 44); g.closePath(); g.fill();
+      g.fillRect(14, 43, 36, 4); g.beginPath(); g.arc(32, 50, 4, 0, Math.PI * 2); g.fill();
+      break;
+    }
   }
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  return t;
+}
+
+// Brass name-plaque for the Crypt of Names coffins (Roman-numeral death years).
+function plaqueTexture(text) {
+  const c = document.createElement("canvas");
+  c.width = 128; c.height = 48;
+  const g = c.getContext("2d");
+  g.fillStyle = "#6a5020"; g.fillRect(0, 0, 128, 48);
+  g.fillStyle = "#c9a24d"; g.fillRect(3, 3, 122, 42);
+  g.fillStyle = "#2a1a08"; g.font = "bold 26px serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(text, 64, 26);
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter;
   t.minFilter = THREE.NearestFilter;
@@ -215,11 +246,12 @@ export class Renderer3D {
         uRedShift: { value: 0 },
         uIce: { value: 0 },
         uHurt: { value: 0 },
-        uDark: { value: 0 }
+        uDark: { value: 0 },
+        uMoon: { value: 0 }
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt; uniform float uDark;
+        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt; uniform float uDark; uniform float uMoon;
         varying vec2 vUv;
         ${BAYER}
         void main(){
@@ -232,6 +264,20 @@ export class Renderer3D {
           vec3 c = texture2D(tDiffuse, uv).rgb;
           if (uGlitch > 0.0) c.r = mix(c.r, texture2D(tDiffuse, uv + vec2(uGlitch * 0.006, 0.0)).r, 0.8);
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+          if (uMoon > 0.0) {
+            // A huge pale moon hangs "behind" the scene: it only shows through the darkest pixels (fog, void, shadow).
+            vec2 mp = vec2(0.7, 0.75);
+            vec2 d = (vUv - mp) * vec2(uRes.x / uRes.y, 1.0);
+            float r = length(d);
+            float l0 = dot(c, vec3(0.3, 0.59, 0.11));
+            float behind = 1.0 - smoothstep(0.4, 0.56, l0);
+            float disc = 1.0 - smoothstep(0.066, 0.071, r);
+            float crater = (0.07 * smoothstep(0.03, 0.0, length(d - vec2(-0.02, 0.015))) + 0.05 * smoothstep(0.018, 0.0, length(d - vec2(0.025, -0.02)))) * disc;
+            vec3 moonC = mix(vec3(0.96, 0.94, 0.84), vec3(0.78, 0.78, 0.74), smoothstep(0.0, 0.07, length(d - vec2(-0.02, 0.02)))) - crater;
+            float halo = (1.0 - smoothstep(0.06, 0.26, r)) * 0.3;
+            c = mix(c, moonC, disc * behind);
+            c += vec3(0.42, 0.48, 0.62) * halo * behind * (1.0 - disc);
+          }
           c.r += uRedShift * 0.06;
           float lum = dot(c, vec3(0.3, 0.59, 0.11));
           c = mix(c, vec3(lum * 0.85, lum * 0.95, lum * 1.15) + vec3(0.0, 0.02, 0.06), uIce * 0.35);
@@ -296,9 +342,27 @@ export class Renderer3D {
 
   setLevel(level) {
     this.level = level;
+    const stage = level.stage || 1;
+    if (this.built && this.builtStage !== stage) {
+      // New stage: throw away the whole scene graph and rebuild it for this map.
+      const old = this.scene;
+      old.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      this.scene = new THREE.Scene();
+      this.scene.background = this.fogColor;
+      this.scene.fog = new THREE.Fog(this.fogColor, 10, 30);
+      this.monsterRigs.clear();
+      this.dropRigs.clear();
+      this.weaponId = null;
+      this.weaponMesh = null;
+      this.built = false;
+    }
     if (!this.built) {
+      this.stage = stage;
+      this.scene.fog.near = stage === 2 ? 9 : 10;
+      this.scene.fog.far = stage === 2 ? 28 : 30;
       this._build(level);
       this.built = true;
+      this.builtStage = stage;
     }
     for (const rig of this.monsterRigs.values()) this.scene.remove(rig.root);
     this.monsterRigs.clear();
@@ -347,15 +411,16 @@ export class Renderer3D {
     const isOpen = (tx, ty) => ty >= 0 && ty < level.rows && tx >= 0 && tx < level.cols && (level.grid[ty][tx] === 0 || level.grid[ty][tx] === 3);
 
     // ---------- Lights ----------
-    scene.add(new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6));
-    const moon = new THREE.DirectionalLight(0x6c7fb0, 0.55);
+    const S2 = level.stage === 2;
+    scene.add(S2 ? new THREE.HemisphereLight(0x8098c8, 0x1c2430, 2.7) : new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6));
+    const moon = new THREE.DirectionalLight(S2 ? 0xb0c4f0 : 0x6c7fb0, S2 ? 1.5 : 0.55);
     moon.position.set(-10, 20, 6);
     scene.add(moon);
 
     // ---------- Floors: base flagstone + per-wing surfaces ----------
     const fw = level.cols * TILE;
     const fh = level.rows * TILE;
-    const base = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), this._mat("floor", { map: this._texRepeat(T.floor, level.cols, level.rows) }));
+    const base = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), this._mat(S2 ? "floor2" : "floor", { map: this._texRepeat(S2 ? T.dirt : T.floor, level.cols, level.rows) }));
     base.rotation.x = -Math.PI / 2;
     base.position.set(fw / 2, 0, fh / 2);
     base.receiveShadow = true;
@@ -364,8 +429,8 @@ export class Renderer3D {
       if (r.floor === "floor") continue;
       const w = r.x1 - r.x0 + 1;
       const h = r.y1 - r.y0 + 1;
-      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood }[r.floor];
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE), this._mat(`floor-${r.key}`, { map: this._texRepeat(tex, w, h) }));
+      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood, grass: T.grass, dirt: T.dirt, bone: T.boneFloor, flag: T.flag }[r.floor];
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE), this._mat(`floor-${level.stage}-${r.key}`, { map: this._texRepeat(tex, w, h) }));
       p.rotation.x = -Math.PI / 2;
       p.position.set((r.x0 + w / 2) * TILE, 0.005, (r.y0 + h / 2) * TILE);
       p.receiveShadow = true;
@@ -389,18 +454,35 @@ export class Renderer3D {
         if (touches) wallTiles.push([tx, ty]);
       }
     }
-    const wallSide = this._mat("wallSide", { map: T.stone }, true);
-    const wallTop = this._mat("wallTop", { map: T.stoneTop }, true);
-    const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, WALL_H, TILE), [wallSide, wallSide, wallTop, wallTop, wallSide, wallSide], wallTiles.length);
+    const WH = S2 ? 1.1 : WALL_H; // graveyard: low mossy walls topped with iron fencing
+    this.wallH = WH;
+    const wallSide = S2 ? this._mat("wallSide2", { map: T.moss }, true) : this._mat("wallSide", { map: T.stone }, true);
+    const wallTop = S2 ? this._mat("wallTop2", { map: T.mossTop }, true) : this._mat("wallTop", { map: T.stoneTop }, true);
+    const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, WH, TILE), [wallSide, wallSide, wallTop, wallTop, wallSide, wallSide], wallTiles.length);
     const m4 = new THREE.Matrix4();
     wallTiles.forEach(([tx, ty], i) => {
       const c = tileCenter(tx, ty);
-      m4.makeTranslation(c.x, WALL_H / 2, c.z);
+      m4.makeTranslation(c.x, WH / 2, c.z);
       walls.setMatrixAt(i, m4);
     });
     walls.castShadow = true;
     walls.receiveShadow = true;
     scene.add(walls);
+    if (S2) {
+      // Iron fence panels along every wall run (two crossed alpha-cut planes per tile, instanced).
+      const fenceMat = psx(new THREE.MeshLambertMaterial({ map: T.fence, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), { cutaway: true });
+      const fh = 1.5;
+      const fx = new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE, fh), fenceMat, wallTiles.length);
+      const fz = new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE, fh), fenceMat, wallTiles.length);
+      const ry = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+      wallTiles.forEach(([tx, ty], i) => {
+        const c = tileCenter(tx, ty);
+        m4.makeTranslation(c.x, WH + fh / 2, c.z);
+        fx.setMatrixAt(i, m4);
+        fz.setMatrixAt(i, m4.clone().multiply(ry));
+      });
+      scene.add(fx, fz);
+    }
 
     const special = new Set();
     for (const k of ["alcoves", "braziers", "glass", "pages", "mirrors", "bolts", "spawns"]) level[k].forEach((o) => special.add(`${o.tx},${o.ty}`));
@@ -414,7 +496,7 @@ export class Renderer3D {
     const bigFlames = [];
     const smallFlames = [];
     for (const [tx, ty] of wallTiles) {
-      if (!isOpen(tx, ty + 1)) continue;
+      if (S2 || !isOpen(tx, ty + 1)) continue;
       const c = tileCenter(tx, ty);
       const z = (ty + 1) * TILE;
       B.box(trimMat, TILE, 0.12, 0.08, c.x, 0.2, z + 0.04);
@@ -439,7 +521,7 @@ export class Renderer3D {
         if (level.grid[ty - 1][tx] !== 1) continue;
         const rr = roomAt(level, tx, ty);
         if (rr && rr.sealed) continue;
-        if (rnd() < 0.22) {
+        if (rnd() < (S2 ? 0.1 : 0.22)) {
           const c = tileCenter(tx, ty);
           const n = 2 + Math.floor(rnd() * 3);
           for (let k = 0; k < n; k++) {
@@ -455,7 +537,7 @@ export class Renderer3D {
 
     // Rugs
     const rugMat = this._mat("rug", { map: T.rug });
-    for (const [x0, y0, w, h] of [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]]) {
+    for (const [x0, y0, w, h] of (S2 ? [] : [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]])) {
       B.add(new THREE.PlaneGeometry(w * TILE * 0.9, h * TILE * 0.96), rugMat, (x0 + w / 2) * TILE, 0.015, (y0 + h / 2) * TILE, -Math.PI / 2);
     }
 
@@ -465,6 +547,13 @@ export class Renderer3D {
     const goldMat = this._mat("goldTrim", { color: 0xc9a24d, emissive: 0x2a1804 });
     const redCloth = this._mat("redCloth", { color: 0x8b0018 });
     const statueMat = this._mat("statue", { color: 0x8a8490 });
+    const graveStone = this._mat("graveStone", { map: T.flag, color: 0xb0b4bc }, true);
+    const darkStone = this._mat("darkStone", { color: 0x2a2c30 });
+    const earthMat = this._mat("earth", { map: T.dirt, color: 0x9a8a80 });
+    const barkMat = this._mat("bark", { color: 0x2e2420 }, true);
+    const boneMat = this._mat("boneMat", { color: 0xd8ceb0, emissive: 0x1a1608 });
+    const voidMat = new THREE.MeshBasicMaterial({ color: 0x030405 });
+    psx(voidMat);
     const greenGlow = new THREE.MeshBasicMaterial({ color: 0x5aff6a });
     psx(greenGlow);
     for (const p of level.props) {
@@ -538,6 +627,65 @@ export class Renderer3D {
           B.box(woodMat, 1.2, 1.0, 1.2, c.x, 0.5, c.z, rnd());
           B.box(woodMat, 0.8, 0.7, 0.8, c.x + 0.3, 1.35, c.z - 0.1, rnd());
           break;
+        case "tomb": {
+          const tilt = (rnd() - 0.5) * 0.25;
+          B.box(graveStone, 0.95, 1.15, 0.22, c.x, 0.55, c.z - 0.2, 0, 0, tilt);
+          B.add(new THREE.CylinderGeometry(0.475, 0.475, 0.22, 8, 1, false, 0, Math.PI), graveStone, c.x, 1.12, c.z - 0.2, Math.PI / 2, 0, Math.PI / 2 + tilt);
+          B.box(darkStone, 0.6, 0.06, 0.02, c.x, 0.8, c.z - 0.08);
+          B.box(earthMat, 0.9, 0.12, 1.3, c.x, 0.06, c.z + 0.3);
+          if (rnd() < 0.4) { B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.25, 6), waxMat, c.x + 0.3, 0.12, c.z + 0.05); smallFlames.push(c.x + 0.3, 0.32, c.z + 0.05); }
+          break;
+        }
+        case "cross":
+          B.box(graveStone, 0.2, 1.7, 0.2, c.x, 0.85, c.z - 0.2, 0, 0, (rnd() - 0.5) * 0.2);
+          B.box(graveStone, 0.9, 0.2, 0.2, c.x, 1.25, c.z - 0.2);
+          B.box(earthMat, 0.9, 0.12, 1.3, c.x, 0.06, c.z + 0.3);
+          break;
+        case "mausoleum":
+          B.box(graveStone, 1.9, 1.9, 1.7, c.x, 0.95, c.z);
+          B.box(darkStone, 2.1, 0.2, 1.9, c.x, 1.95, c.z);
+          B.add(new THREE.ConeGeometry(1.4, 0.8, 4), graveStone, c.x, 2.45, c.z, 0, Math.PI / 4);
+          B.box(voidMat, 0.8, 1.3, 0.05, c.x, 0.65, c.z + 0.86);
+          B.box(ironMat, 0.9, 0.08, 0.06, c.x, 1.3, c.z + 0.88);
+          B.box(graveStone, 0.22, 1.7, 0.22, c.x - 0.7, 0.85, c.z + 0.9);
+          B.box(graveStone, 0.22, 1.7, 0.22, c.x + 0.7, 0.85, c.z + 0.9);
+          break;
+        case "tree": {
+          const h = 2.6 + rnd() * 1.2;
+          B.add(new THREE.CylinderGeometry(0.12, 0.3, h, 5), barkMat, c.x, h / 2, c.z, (rnd() - 0.5) * 0.15, 0, (rnd() - 0.5) * 0.15);
+          for (let k = 0; k < 5; k++) {
+            const a = rnd() * Math.PI * 2, len = 0.9 + rnd() * 0.9, y = h * (0.5 + rnd() * 0.45);
+            B.add(new THREE.CylinderGeometry(0.03, 0.08, len, 4), barkMat, c.x + Math.cos(a) * len * 0.4, y + len * 0.3, c.z + Math.sin(a) * len * 0.4, Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9);
+          }
+          B.box(earthMat, 1.0, 0.1, 1.0, c.x, 0.05, c.z);
+          break;
+        }
+        case "grave":
+          B.box(voidMat, 0.95, 0.02, 1.7, c.x, 0.02, c.z);
+          B.box(earthMat, 0.25, 0.3, 1.9, c.x - 0.62, 0.15, c.z);
+          B.box(earthMat, 0.25, 0.3, 1.9, c.x + 0.62, 0.15, c.z);
+          B.box(earthMat, 1.4, 0.45, 0.4, c.x + 0.2, 0.22, c.z + 0.95, 0.3);
+          B.box(graveStone, 0.8, 0.9, 0.18, c.x, 0.45, c.z - 0.95, -0.15);
+          B.box(woodMat, 0.08, 1.2, 0.08, c.x + 0.8, 0.6, c.z + 0.7, 0.3, 0, 0.4); // abandoned spade
+          break;
+        case "bones":
+          for (let k = 0; k < 7; k++) B.box(boneMat, 0.5 + rnd() * 0.3, 0.08, 0.08, c.x + (rnd() - 0.5) * 0.9, 0.08 + k * 0.05, c.z + (rnd() - 0.5) * 0.9, rnd() * Math.PI);
+          for (let k = 0; k < 3; k++) B.add(new THREE.SphereGeometry(0.16, 6, 5), boneMat, c.x + (rnd() - 0.5) * 0.7, 0.3 + k * 0.08, c.z + (rnd() - 0.5) * 0.7);
+          break;
+        case "angel":
+          B.box(graveStone, 1.0, 0.7, 1.0, c.x, 0.35, c.z);
+          B.add(new THREE.CylinderGeometry(0.22, 0.5, 1.6, 6), graveStone, c.x, 1.5, c.z);
+          B.add(new THREE.SphereGeometry(0.2, 6, 5), graveStone, c.x, 2.45, c.z + 0.05);
+          B.box(graveStone, 0.12, 1.1, 0.6, c.x - 0.35, 1.9, c.z - 0.3, 0.3, 0, 0.5);
+          B.box(graveStone, 0.12, 1.1, 0.6, c.x + 0.35, 1.9, c.z - 0.3, 0.3, 0, -0.5);
+          break;
+        case "fountain":
+          B.add(new THREE.CylinderGeometry(1.0, 1.05, 0.6, 10, 1, true), graveStone, c.x, 0.3, c.z);
+          B.cyl(this._mat("fountWater", { color: 0x0a1a14, emissive: 0x04120c }), 0.95, 0.95, 0.05, 10, c.x, 0.48, c.z);
+          B.add(new THREE.CylinderGeometry(0.16, 0.24, 1.3, 6), graveStone, c.x, 1.1, c.z);
+          B.add(new THREE.CylinderGeometry(0.5, 0.2, 0.2, 8), graveStone, c.x, 1.8, c.z);
+          B.add(new THREE.SphereGeometry(0.16, 6, 5), boneMat, c.x, 2.0, c.z);
+          break;
         case "well":
           B.add(new THREE.CylinderGeometry(0.9, 0.9, 0.9, 10, 1, true), stoneMat, c.x, 0.45, c.z);
           B.cyl(this._mat("wellWater", { color: 0x050810 }), 0.85, 0.85, 0.05, 10, c.x, 0.5, c.z);
@@ -562,16 +710,23 @@ export class Renderer3D {
       for (const [tx, ty] of d.tiles) {
         const c = tileCenter(tx, ty);
         cx += c.x; cz += c.z;
-        const block = new THREE.Mesh(new THREE.BoxGeometry(TILE, WALL_H, TILE), wallSide);
-        block.position.set(c.x, WALL_H / 2, c.z);
+        const block = new THREE.Mesh(new THREE.BoxGeometry(TILE, WH, TILE), wallSide);
+        block.position.set(c.x, WH / 2, c.z);
         wall.add(block);
         const top = new THREE.Mesh(new THREE.BoxGeometry(TILE, 0.08, TILE), wallTop);
-        top.position.set(c.x, WALL_H + 0.04, c.z);
+        top.position.set(c.x, WH + 0.04, c.z);
         wall.add(top);
         // hairline crack on the faces — a hint that the masonry isn't true
-        const crack = new THREE.Mesh(new THREE.BoxGeometry(0.06, WALL_H * 0.7, 0.06), seamMat);
-        crack.position.set(c.x, WALL_H * 0.45, c.z);
+        const crack = new THREE.Mesh(new THREE.BoxGeometry(0.06, WH * 0.7, 0.06), seamMat);
+        crack.position.set(c.x, WH * 0.45, c.z);
         wall.add(crack);
+        if (S2) {
+          // fence on the secret span too, and a crooked gap in it — the tell
+          const fp = new THREE.Mesh(new THREE.PlaneGeometry(TILE, 1.5), psx(new THREE.MeshLambertMaterial({ map: T.fence, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })));
+          fp.position.set(c.x, WH + 0.75, c.z);
+          fp.rotation.z = 0.08;
+          wall.add(fp);
+        }
       }
       scene.add(wall);
       const item = new THREE.Group();
@@ -615,6 +770,19 @@ export class Renderer3D {
         halo.position.y = 0.5;
         halo.scale.set(0.9, 0.9, 1);
         item.add(halo);
+      } else if (d.item === "angel") {
+        const st = this._mat("graveStone", {});
+        const add = (geo, x, y, z, rx = 0, rz = 0) => { const m = new THREE.Mesh(geo, st); m.position.set(x, y, z); m.rotation.set(rx, 0, rz); item.add(m); return m; };
+        add(new THREE.BoxGeometry(0.9, 0.5, 0.9), 0, 0.25, 0);
+        add(new THREE.CylinderGeometry(0.2, 0.42, 1.3, 6), 0, 1.15, 0);
+        add(new THREE.SphereGeometry(0.17, 6, 5), 0, 1.95, 0.08, 0.4);
+        add(new THREE.BoxGeometry(0.1, 0.9, 0.5), -0.3, 1.5, -0.25, 0.3, 0.5);
+        add(new THREE.BoxGeometry(0.1, 0.9, 0.5), 0.3, 1.5, -0.25, 0.3, -0.5);
+        add(new THREE.BoxGeometry(0.34, 0.1, 0.22), 0, 1.35, 0.3); // cupped hands
+        const halo = new THREE.Sprite(this.glowMat(0x9ab8e0, 0.35));
+        halo.position.y = 1.3;
+        halo.scale.set(1.3, 1.6, 1);
+        item.add(halo);
       } else if (d.item === "portrait") {
         // Hang it on the north wall of the hall (south face of the first secret tile).
         const frame = this._mat("pframe", { color: 0x5a3a14, emissive: 0x1a0e04 });
@@ -641,7 +809,7 @@ export class Renderer3D {
     if (level.well) {
       const wc = tileCenter(level.well.tx, level.well.ty);
       this.wellGroup.position.set(wc.x, 0, wc.z);
-      const mist = new THREE.Sprite(this.glowMat(0x6a88aa, 0.35));
+      const mist = new THREE.Sprite(this.glowMat(level.well.fountain ? 0x4aa080 : 0x6a88aa, 0.35));
       mist.position.y = 0.7;
       mist.scale.set(2.2, 1.4, 1);
       this.wellMist = mist;
@@ -655,12 +823,24 @@ export class Renderer3D {
     // ---------- Iron alcoves ----------
     const innerMat = this._mat("inner", { color: 0x120a0e });
     const spikeMat = this._mat("spike", { color: 0x8a8690 });
+    const alcMat = S2 ? this._mat("graveStone", {}) : ironMat;
     for (const a of level.alcoves) {
       const c = tileCenter(a.tx, a.ty);
       const flip = !isFloor(a.tx, a.ty + 1);
+      if (S2) {
+        // Graveyard hiding spot: an open stone crypt niche.
+        const P2 = (geo, mat, x, y, z) => B.add(geo, mat, c.x + x, y, c.z + z * (flip ? -1 : 1));
+        P2(new THREE.BoxGeometry(1.6, 2.4, 0.2), alcMat, 0, 1.2, -0.7);
+        P2(new THREE.BoxGeometry(0.2, 2.4, 1.3), alcMat, -0.75, 1.2, -0.1);
+        P2(new THREE.BoxGeometry(0.2, 2.4, 1.3), alcMat, 0.75, 1.2, -0.1);
+        P2(new THREE.BoxGeometry(1.8, 0.25, 1.5), alcMat, 0, 2.5, -0.1);
+        P2(new THREE.ConeGeometry(0.9, 0.6, 4), alcMat, 0, 2.95, -0.1);
+        P2(new THREE.BoxGeometry(1.3, 2.2, 0.04), innerMat, 0, 1.15, -0.58);
+        continue;
+      }
       const s = flip ? -1 : 1;
       const P = (geo, mat, x, y, z, rx = 0, ry = 0) => B.add(geo, mat, c.x + x * s, y, c.z + z * s, rx * s, ry);
-      P(new THREE.BoxGeometry(1.4, 2.5, 0.14), ironMat, 0, 1.25, -0.62);
+      P(new THREE.BoxGeometry(1.4, 2.5, 0.14), alcMat, 0, 1.25, -0.62);
       P(new THREE.BoxGeometry(1.24, 2.38, 0.04), innerMat, 0, 1.22, -0.53);
       P(new THREE.BoxGeometry(0.14, 2.5, 1.2), ironMat, -0.68, 1.25, -0.06);
       P(new THREE.BoxGeometry(0.14, 2.5, 1.2), ironMat, 0.68, 1.25, -0.06);
@@ -709,6 +889,108 @@ export class Renderer3D {
     B.box(stoneMat, 0.4, WALL_H + 0.6, 0.9, gc.x - 1.05, (WALL_H + 0.6) / 2, gc.z + 0.6);
     B.box(stoneMat, 0.4, WALL_H + 0.6, 0.9, gc.x + 1.05, (WALL_H + 0.6) / 2, gc.z + 0.6);
     B.box(goldMat, 2.5, 0.5, 0.9, gc.x, WALL_H + 0.35, gc.z + 0.6);
+
+    if (S2) {
+      // Graveyard beyond the fences: scattered stones and dead trees on solid ground (decor only).
+      for (let ty = 0; ty < level.rows; ty++) for (let tx = 0; tx < level.cols; tx++) {
+        if (level.grid[ty][tx] !== 1 || isOpen(tx, ty) || this.secretSet.has(`${tx},${ty}`)) continue;
+        let near = false;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isOpen(tx + dx, ty + dy)) near = true;
+        if (near) continue;
+        const r = rnd();
+        const c = tileCenter(tx, ty);
+        if (r < 0.07) {
+          B.box(graveStone, 0.8, 1.0, 0.2, c.x + (rnd() - 0.5), 0.45, c.z, (rnd() - 0.5) * 0.4, 0, (rnd() - 0.5) * 0.4);
+        } else if (r < 0.1) {
+          B.box(graveStone, 0.18, 1.5, 0.18, c.x, 0.7, c.z, 0, 0, (rnd() - 0.5) * 0.5);
+          B.box(graveStone, 0.8, 0.18, 0.18, c.x, 1.1, c.z);
+        } else if (r < 0.125) {
+          const h = 2.4 + rnd() * 1.4;
+          B.add(new THREE.CylinderGeometry(0.1, 0.26, h, 5), barkMat, c.x, h / 2, c.z, (rnd() - 0.5) * 0.2, 0, (rnd() - 0.5) * 0.2);
+          for (let k = 0; k < 3; k++) {
+            const a = rnd() * Math.PI * 2, len = 0.8 + rnd() * 0.8;
+            B.add(new THREE.CylinderGeometry(0.03, 0.07, len, 4), barkMat, c.x + Math.cos(a) * len * 0.4, h * 0.75 + len * 0.3, c.z + Math.sin(a) * len * 0.4, Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9);
+          }
+        }
+      }
+    }
+
+    // ---------- The Hooded Pedlar (merchant) ----------
+    this.merchantRig = null;
+    if (level.merchant) {
+      const mc = tileCenter(level.merchant.tx, level.merchant.ty);
+      const robe = this._mat("pedlar-robe", { color: 0x2a1e2e, emissive: 0x0a060c });
+      const cloth = this._mat("pedlar-cloth", { color: 0x5a1020 });
+      B.box(woodMat, 1.7, 0.1, 0.8, mc.x, 0.9, mc.z + 0.45);
+      B.box(woodMat, 0.1, 0.9, 0.1, mc.x - 0.75, 0.45, mc.z + 0.8);
+      B.box(woodMat, 0.1, 0.9, 0.1, mc.x + 0.75, 0.45, mc.z + 0.8);
+      B.box(cloth, 1.72, 0.4, 0.04, mc.x, 0.72, mc.z + 0.86);
+      B.box(woodMat, 0.1, 2.6, 0.1, mc.x - 0.8, 1.3, mc.z + 0.1);
+      B.box(woodMat, 0.1, 2.6, 0.1, mc.x + 0.8, 1.3, mc.z + 0.1);
+      B.box(cloth, 1.9, 0.08, 1.2, mc.x, 2.6, mc.z + 0.3, 0, -0.18);
+      const g = new THREE.Group();
+      g.position.set(mc.x, 0, mc.z - 0.1);
+      const body = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.7, 6), robe);
+      body.position.y = 0.85;
+      const hood = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.6, 6), robe);
+      hood.position.y = 1.85;
+      const face = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 5), new THREE.MeshBasicMaterial({ color: 0x050307 }));
+      face.position.set(0, 1.7, 0.12);
+      g.add(body, hood, face);
+      for (const sx of [-0.07, 0.07]) {
+        const e = new THREE.Sprite(this.glowMat(0xffd060, 0.95));
+        e.position.set(sx, 1.72, 0.3);
+        e.scale.set(0.12, 0.08, 1);
+        g.add(e);
+      }
+      const lamp = new THREE.Sprite(this.glowMat(0xffb050, 0.75));
+      lamp.position.set(0.55, 1.1, 0.5);
+      lamp.scale.set(1.6, 1.6, 1);
+      g.add(lamp);
+      const bottleCols = [0xc41230, 0x4a8ad8, 0xe7c873, 0x5aff6a];
+      bottleCols.forEach((col, k) => {
+        const bt = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.26, 6), new THREE.MeshBasicMaterial({ color: col }));
+        bt.position.set(-0.55 + k * 0.32, 1.08, 0.55);
+        g.add(bt);
+      });
+      const sign = new THREE.Sprite(this.glowMat(0xffc070, 0.0));
+      sign.position.set(0, 2.3, 0.3);
+      sign.scale.set(2.2, 2.2, 1);
+      g.add(sign);
+      scene.add(g);
+      this.merchantRig = { g, lamp, sign, hood };
+    }
+
+    // ---------- Grave hands (Stage II hazard) ----------
+    this.handRigs = [];
+    if (level.graves && level.graves.length) {
+      const skin = this._mat("grave-hand", { color: 0x9aa890, emissive: 0x101810 });
+      for (const gr of level.graves) {
+        const c = tileCenter(gr.tx, gr.ty);
+        const g = new THREE.Group();
+        g.position.set(c.x, -1.4, c.z);
+        for (const [hx, hz, rot] of [[-0.22, -0.2, 0.25], [0.2, 0.3, -0.3], [0.05, -0.55, 0.1]]) {
+          const arm = new THREE.Group();
+          arm.position.set(hx, 0, hz);
+          arm.rotation.z = rot;
+          const fore = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.1, 0.14), skin);
+          fore.position.y = 0.55;
+          arm.add(fore);
+          const palm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.08), skin);
+          palm.position.y = 1.18;
+          arm.add(palm);
+          for (let f = 0; f < 4; f++) {
+            const fing = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.04), skin);
+            fing.position.set(-0.08 + f * 0.055, 1.36, 0);
+            fing.rotation.x = 0.4;
+            arm.add(fing);
+          }
+          g.add(arm);
+        }
+        scene.add(g);
+        this.handRigs.push({ g, idx: gr.i });
+      }
+    }
 
     B.build(scene, true);
 
@@ -931,11 +1213,39 @@ export class Renderer3D {
 
     // ---------- Dust ----------
     const dust = [];
-    for (let i = 0; i < 400; i++) dust.push(rnd() * fw, rnd() * 3.2, rnd() * fh);
+    const S2d = level.stage === 2;
+    for (let i = 0; i < (S2d ? 900 : 400); i++) dust.push(rnd() * fw, S2d ? rnd() * 1.1 : rnd() * 3.2, rnd() * fh);
     const dg = new THREE.BufferGeometry();
     dg.setAttribute("position", new THREE.Float32BufferAttribute(dust, 3));
-    this.dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0xd8c8b0, size: 0.06, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.dust = new THREE.Points(dg, S2d
+      ? new THREE.PointsMaterial({ map: T.glow, color: 0x8aa0c8, size: 1.6, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending })
+      : new THREE.PointsMaterial({ color: 0xd8c8b0, size: 0.06, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.dustMist = S2d;
     scene.add(this.dust);
+
+    // ---------- Crows (Stage II): flapping silhouettes circling over the yard ----------
+    this.crows = [];
+    if (S2d) {
+      const crowMat = new THREE.MeshBasicMaterial({ color: 0x07060a, side: THREE.DoubleSide });
+      for (let i = 0; i < 5; i++) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.5), crowMat);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), crowMat);
+        head.position.z = 0.3;
+        const beak = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.14, 4), crowMat);
+        beak.rotation.x = Math.PI / 2;
+        beak.position.z = 0.42;
+        const wl = new THREE.Group(), wr = new THREE.Group();
+        const wgeo = new THREE.PlaneGeometry(0.7, 0.3);
+        wgeo.translate(0.35, 0, 0);
+        const ml = new THREE.Mesh(wgeo, crowMat); ml.rotation.x = -Math.PI / 2; wl.add(ml);
+        const mr = new THREE.Mesh(wgeo, crowMat); mr.rotation.x = -Math.PI / 2; mr.rotation.z = Math.PI; wr.add(mr);
+        g.add(body, head, beak, wl, wr);
+        g.scale.setScalar(0.85);
+        scene.add(g);
+        this.crows.push({ g, wl, wr, r: 4 + rnd() * 6, sp: 0.25 + rnd() * 0.35, ph: rnd() * 6.28, h: 4.2 + rnd() * 1.2, ox: (rnd() - 0.5) * 6, oz: (rnd() - 0.5) * 6 });
+      }
+    }
   }
 
   // ---------------- FX helpers ----------------
@@ -1085,7 +1395,7 @@ export class Renderer3D {
       let scale = 1;
       let sink = 0;
       if (m.state === "RISE") {
-        const riseT = m.fromWell ? 1.8 : 0.9;
+        const riseT = m.fromWell ? 1.8 : (m.type && m.type.rise) || 0.9;
         const k = Math.max(0, Math.min(1, m.timer / riseT));
         scale = Math.max(0.05, 1 - k);
         sink = m.fromWell ? -k * 2.4 : -k * 1.2;
@@ -1127,6 +1437,27 @@ export class Renderer3D {
         rig.arms[0].rotation.x = reach;
         rig.arms[1].rotation.x = windup ? -2.2 : -0.9 - Math.sin(rig.walk) * 0.3;
         rig.torso.rotation.x = hurt ? 0.05 : windup ? 0.7 : 0.45 + Math.sin(t * 2 + m.id) * 0.05;
+      } else if (m.kind === "skeleton") {
+        this._animateWalk(rig, rig.walk * 1.2, Math.min(1, speed / 1.2));
+        rig.arms[0].rotation.x = windup ? -2.4 : -0.5 + Math.sin(rig.walk * 1.2) * 0.5;
+        rig.arms[1].rotation.x = windup ? -2.0 : -0.5 - Math.sin(rig.walk * 1.2) * 0.5;
+        rig.torso.rotation.x = hurt ? -0.2 : windup ? 0.5 : 0.18;
+        rig.torso.rotation.z = Math.sin(t * 6 + m.id) * 0.04; // bones rattle
+      } else if (m.kind === "brute") {
+        this._animateWalk(rig, rig.walk * 0.7, Math.min(1, speed / 1.0));
+        rig.arms[0].rotation.x = windup ? -1.6 : Math.sin(rig.walk * 0.7) * 0.3;
+        rig.arms[1].rotation.x = windup ? -3.0 : -0.4 - Math.sin(rig.walk * 0.7) * 0.25;
+        rig.torso.rotation.x = hurt ? 0.0 : windup ? -0.2 : 0.3 + Math.sin(t * 1.5 + m.id) * 0.04;
+      } else if (m.kind === "banshee") {
+        const wail = m.wailing > 0 ? 1 : 0;
+        rig.float.position.y = 0.6 + Math.sin(t * 2.2 + m.id) * 0.12 + wail * 0.35;
+        rig.float.rotation.x = windup ? -0.4 : wail ? -0.25 : 0.15;
+        rig.tatters.forEach((tp, i) => { tp.rotation.x = Math.sin(t * 5 + i * 1.3) * 0.35 + 0.2; });
+        rig.arms[0].rotation.z = wail ? -1.3 : -0.2 + Math.sin(t * 2 + m.id) * 0.1;
+        rig.arms[1].rotation.z = wail ? 1.3 : 0.2 - Math.sin(t * 2 + m.id) * 0.1;
+        rig.arms[0].rotation.x = windup ? -1.6 : 0;
+        rig.arms[1].rotation.x = windup ? -1.6 : 0;
+        rig.jaw.scale.y = wail ? 2.6 + Math.sin(t * 30) * 0.4 : 1;
       } else if (m.kind === "maiden") {
         rig.limbs.forEach((l, i) => { l.rotation.x = Math.sin(rig.walk * 1.6 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.6; });
         rig.body.position.y = windup ? 0.25 : Math.abs(Math.sin(rig.walk * 1.6)) * 0.06;
@@ -1195,12 +1526,24 @@ export class Renderer3D {
     this.halos.material.opacity = 0.45 + Math.sin(t * 9) * 0.06;
 
     const dp = this.dust.geometry.attributes.position;
-    for (let i = 0; i < dp.count; i++) {
-      let y = dp.getY(i) + dt * 0.08;
-      if (y > 3.4) y = 0;
-      dp.setY(i, y);
+    if (this.dustMist) {
+      // low ground mist drifts east and wraps
+      const fwm = this.level ? this.level.cols * TILE : 116;
+      for (let i = 0; i < dp.count; i++) {
+        let x = dp.getX(i) + dt * (0.25 + (i % 5) * 0.06);
+        if (x > fwm) x = 0;
+        dp.setX(i, x);
+      }
+      this.dust.material.opacity = 0.14 + Math.sin(t * 0.4) * 0.03;
+    } else {
+      for (let i = 0; i < dp.count; i++) {
+        let y = dp.getY(i) + dt * 0.08;
+        if (y > 3.4) y = 0;
+        dp.setY(i, y);
+      }
     }
     dp.needsUpdate = true;
+    this._updateGraveyard(level, state.player, dt, t, mode, state.puzzle);
 
     if (level) {
       this.pageMeshes.forEach((pm, i) => {
@@ -1286,15 +1629,16 @@ export class Renderer3D {
       this.spot.visible = lit;
       const lowOilFlicker = player.oil < 15 ? 0.6 + 0.4 * Math.abs(Math.sin(t * 26)) : 1;
       const cursed = darkCurse > 0;
-      this.spot.intensity = 60 * lowOilFlicker * (cursed ? 0.28 : 1);
-      this.spot.distance = cursed ? 6.5 : 16;
-      this.spot.angle = cursed ? 0.34 : 0.62;
+      const lm = player.lanternMul || 1; // Wider Wick upgrade
+      this.spot.intensity = 60 * lowOilFlicker * (cursed ? 0.28 : 1) * (0.6 + 0.4 * lm);
+      this.spot.distance = (cursed ? 6.5 : 16) * lm;
+      this.spot.angle = Math.min(0.95, (cursed ? 0.34 : 0.62) * (0.5 + 0.5 * lm));
       this.spot.position.set(px + dirX * 0.45, 1.25, pz + dirZ * 0.45);
       this.spot.target.position.set(px + dirX * (cursed ? 3 : 6), 0, pz + dirZ * (cursed ? 3 : 6));
       this.aura.position.set(px + dirX * 0.4, 1.3, pz + dirZ * 0.4);
       const staffGlow = weapon === "staff" && !player.hidden ? 4 : 0;
       this.aura.intensity = ((lit ? 9 : 2.2) + staffGlow + flareFlash * 160) * (cursed ? 0.35 : 1);
-      this.aura.distance = (5 + flareFlash * 10) * (cursed ? 0.4 : 1);
+      this.aura.distance = (5 * lm + flareFlash * 10) * (cursed ? 0.4 : 1);
       this.aura.color.setHex(flareFlash > 0.05 ? 0xfff0d0 : 0xffc27a);
       focus = new THREE.Vector3(px, 0, pz);
     } else {
@@ -1395,7 +1739,7 @@ export class Renderer3D {
       const nearDoor = (level.lockedRooms || []).some((lr) => Math.abs(ftx - lr.door[0]) <= 1 && fty >= lr.door[1] - 3 && fty <= lr.door[1] - 1);
       if (nearDoor) this.lastRoomKey = "doorway";
       else if (!room && this.lastRoomKey === "doorway") this.lastRoomKey = fty >= 46 ? this.lastRoomKey : "ward";
-      const o = CAM_OFFSETS[this.lastRoomKey];
+      const o = CAM_OFFSETS[this.lastRoomKey] || CAM_OFFSETS.ward;
       const off = player.hidden ? new THREE.Vector3(2.0, 4.8, 3.8) : new THREE.Vector3(o[0], o[1], o[2]);
       if (this.camera.aspect < 0.8) off.multiplyScalar(1.28);
       this.camOffset.lerp(off, Math.min(1, dt * 2.2));
@@ -1425,7 +1769,9 @@ export class Renderer3D {
       this.postMat.uniforms.uGlitch.value = lowSan > 0 ? lowSan * (0.5 + 0.5 * Math.sin(t * 9)) : 0;
     }
 
-    this.fogColor.setHex(witching ? 0x1c0408 : 0x0a0610);
+    if (this.stage === 2) this.fogColor.setHex(witching ? 0x241018 : 0x1a2232);
+    else this.fogColor.setHex(witching ? 0x1c0408 : 0x0a0610);
+    this.postMat.uniforms.uMoon.value = this.stage === 2 && !inMenu ? 1 : 0;
     this.postMat.uniforms.uRedShift.value = dangerRed * 0.45;
     this.postMat.uniforms.uIce.value = countess && countess.state === AI_STATE.FROZEN && !inMenu ? 1 : 0;
     this.postMat.uniforms.uHurt.value = hurt;
@@ -1443,14 +1789,28 @@ export class Renderer3D {
 
   _buildBreakables(level, woodMat, ironMat) {
     const list = level.breakables || [];
-    const crates = list.filter((b) => b.type === "crate");
-    const barrels = list.filter((b) => b.type === "barrel");
+    const crates = list.filter((b) => b.type === "crate" || b.type === "coffin");
+    const barrels = list.filter((b) => b.type === "barrel" || b.type === "urn");
     const plank = this._mat("crate-plank", { map: this.T.wood, emissive: 0x120a04 });
+    if (level.stage === 2) {
+      // Coffins (big) and funeral urns (small) share the crate/barrel instancing slots.
+      const coffinWood = this._mat("coffin-wood", { map: this.T.wood, color: 0x6a4a3a, emissive: 0x0a0604 });
+      const brass = this._mat("coffin-brass", { color: 0xb89a50, emissive: 0x2a1c04 });
+      const urnMat = this._mat("urn", { map: this.T.flag, color: 0x9a8a78, emissive: 0x0a0806 });
+      this.crateBig = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.62, 0.5, 0.6, 6).scale(1, 1, 1.6), coffinWood, Math.max(1, crates.length));
+      this.crateTop = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.66, 0.6, 0.14, 6).scale(1, 1, 1.6), coffinWood, Math.max(1, crates.length));
+      this.crateBand = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.04, 0.9), brass, Math.max(1, crates.length));
+      this.barrelBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3, 0.4, 0.95, 8), urnMat, Math.max(1, barrels.length));
+      this.barrelBand = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.36, 0.3, 0.1, 8), brass, Math.max(1, barrels.length * 2));
+      this.brkStyle = 2;
+    } else {
+    this.brkStyle = 1;
     this.crateBig = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 1.0, 1.2), plank, Math.max(1, crates.length));
     this.crateTop = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.7, 0.8), plank, Math.max(1, crates.length));
     this.crateBand = new THREE.InstancedMesh(new THREE.BoxGeometry(1.26, 0.1, 1.26), ironMat, Math.max(1, crates.length));
     this.barrelBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), woodMat, Math.max(1, barrels.length));
     this.barrelBand = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 8), ironMat, Math.max(1, barrels.length * 2));
+    }
     for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand]) {
       im.castShadow = true;
       im.receiveShadow = true;
@@ -1458,7 +1818,7 @@ export class Renderer3D {
       this.scene.add(im);
     }
     const rnd = seeded(77);
-    this.brkMeta = list.map((b) => ({ rot: rnd() * Math.PI, top: rnd() * Math.PI, idx: (b.type === "crate" ? crates : barrels).indexOf(b) }));
+    this.brkMeta = list.map((b) => ({ rot: rnd() * Math.PI, top: rnd() * Math.PI, idx: (crates.includes(b) ? crates : barrels).indexOf(b), big: crates.includes(b) }));
     this._brkObj = new THREE.Object3D();
     this._syncBreakables(level, 0);
   }
@@ -1482,7 +1842,15 @@ export class Renderer3D {
       const wob = b.hitT > 0 ? Math.sin(b.hitT * 60) * 0.12 * (b.hitT / 0.3) : 0;
       const dmgTilt = b.broken ? 0 : (1 - b.hp / b.maxHp) * 0.12;
       const i = meta.idx;
-      if (b.type === "crate") {
+      if (this.brkStyle === 2 && meta.big) {
+        put(this.crateBig, i, c.x, 0.3 * sc, c.z, meta.rot * 0.3 + wob, sc, dmgTilt);
+        put(this.crateTop, i, c.x, 0.67 * sc, c.z, meta.rot * 0.3 - wob * 1.5, sc, -dmgTilt * 2);
+        put(this.crateBand, i, c.x, 0.76 * sc, c.z, meta.rot * 0.3 - wob * 1.5, sc, -dmgTilt * 2);
+      } else if (this.brkStyle === 2) {
+        put(this.barrelBody, i, c.x, 0.47 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
+        put(this.barrelBand, i * 2, c.x, 0.98 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
+        put(this.barrelBand, i * 2 + 1, c.x, 0.06 * sc, c.z, meta.rot + wob, sc * 1.15, dmgTilt + wob * 0.5);
+      } else if (b.type === "crate") {
         put(this.crateBig, i, c.x, 0.5 * sc, c.z, meta.rot + wob, sc, dmgTilt);
         put(this.crateTop, i, c.x + 0.3 * sc, 1.35 * sc, c.z - 0.1 * sc, meta.top - wob, sc, -dmgTilt * 2);
         put(this.crateBand, i, c.x, 0.5 * sc, c.z, meta.rot + wob, sc, dmgTilt);
@@ -1500,6 +1868,9 @@ export class Renderer3D {
     this.candleRigs = [];
     this.plateRigs = [];
     this.crushSlabs = null;
+    this.coffinRigs = [];
+    this.bellRigs = [];
+    this.floodWater = null;
     for (const lr of (level.lockedRooms || [])) {
       // Ornate locked door (its own block so it can sink away)
       const [dx, dy] = lr.door;
@@ -1580,6 +1951,94 @@ export class Renderer3D {
         this.candleGlow.position.set(rc.x, 1.2, rc.z);
         this.candleGlow.scale.set(12, 12, 1);
         this.scene.add(this.candleGlow);
+      } else if (lr.kind === "crypt") {
+        const r = lr.room;
+        const sarc = this._mat("sarc", { map: this.T.flag, color: 0xa0a4ac });
+        const lidMat = this._mat("sarc-lid", { map: this.T.flag, color: 0x8a8e96 });
+        const wax = this._mat("puz-wax", { color: 0xf0e4c8, emissive: 0x3a2a10 });
+        const rc = tileCenter(10, 51);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(3.0, 3.15, 28), new THREE.MeshBasicMaterial({ color: 0x5a4a20, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(rc.x, 0.02, rc.z);
+        this.scene.add(ring);
+        for (const it of lr.items) {
+          const g = new THREE.Group();
+          const ic = tileCenter(it.tx, it.ty);
+          g.position.set(ic.x, 0, ic.z);
+          const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.75, 1.75), sarc);
+          body.position.y = 0.375;
+          const lid = new THREE.Group();
+          const slab = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.16, 1.85), lidMat);
+          slab.position.y = 0.83;
+          const plaque = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.4), new THREE.MeshBasicMaterial({ map: plaqueTexture(it.sym) }));
+          plaque.rotation.x = -Math.PI / 2;
+          plaque.position.set(0, 0.92, 0.45);
+          lid.add(slab, plaque);
+          const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.3, 6), wax);
+          candle.position.set(0, 1.06, -0.45);
+          lid.add(candle);
+          const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.T.flame, color: 0xffd08a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+          flame.position.set(0, 1.32, -0.45);
+          flame.scale.set(0.34, 0.5, 1);
+          const halo = new THREE.Sprite(this.glowMat(0xffc060, 0.6));
+          halo.position.set(0, 1.25, -0.45);
+          halo.scale.set(1.5, 1.5, 1);
+          lid.add(flame, halo);
+          g.add(body, lid);
+          this.scene.add(g);
+          this.coffinRigs.push({ idx: it.i, lid, flame, halo });
+        }
+        this.candleGlow = new THREE.Sprite(this.glowMat(0xffa040, 0));
+        this.candleGlow.position.set(((r.x0 + r.x1 + 1) / 2) * TILE, 1.2, ((r.y0 + r.y1 + 1) / 2) * TILE);
+        this.candleGlow.scale.set(12, 12, 1);
+        this.scene.add(this.candleGlow);
+      } else if (lr.kind === "flood") {
+        const r = lr.room;
+        const metal = { silver: 0xd8e0ea, bronze: 0xb87a3a, iron: 0x5a5a64, bone: 0xe0d4b0 };
+        for (const it of lr.items) {
+          const g = new THREE.Group();
+          const ic = tileCenter(it.tx, it.ty);
+          g.position.set(ic.x, 0, ic.z);
+          for (const sx of [-0.7, 0.7]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), woodMat);
+            post.position.set(sx, 1.3, 0);
+            g.add(post);
+          }
+          const beam = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.16, 0.18), woodMat);
+          beam.position.y = 2.6;
+          g.add(beam);
+          const swing = new THREE.Group();
+          swing.position.y = 2.5;
+          const bm = this._mat(`bell-${it.sym}`, { color: metal[it.sym], emissive: (metal[it.sym] & 0xfefefe) >> 3 });
+          const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.42, 0.62, 8, 1, true), bm);
+          bell.material.side = THREE.DoubleSide;
+          bell.position.y = -0.38;
+          const crown = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 4), bm);
+          crown.position.y = -0.08;
+          const lip = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.04, 4, 10), bm);
+          lip.rotation.x = Math.PI / 2;
+          lip.position.y = -0.69;
+          swing.add(bell, crown, lip);
+          g.add(swing);
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshBasicMaterial({ map: glyphTexture(it.sym, "#ffffff", "#141c22"), transparent: true }));
+          sign.position.set(0, 2.6, 0.12);
+          g.add(sign);
+          const halo = new THREE.Sprite(this.glowMat(metal[it.sym], 0.0));
+          halo.position.y = 1.9;
+          halo.scale.set(1.8, 1.8, 1);
+          g.add(halo);
+          this.scene.add(g);
+          this.bellRigs.push({ idx: it.i, swing, halo, ring: 0 });
+        }
+        const w = (r.x1 - r.x0 + 1) * TILE, d = (r.y1 - r.y0 + 1) * TILE;
+        const water = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color: 0x123a40, transparent: true, opacity: 0.62, depthWrite: false }));
+        water.rotation.x = -Math.PI / 2;
+        water.position.set((r.x0 + w / TILE / 2) * TILE, -0.1, (r.y0 + d / TILE / 2) * TILE);
+        const sheen = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: this.T.glow, color: 0x4aa0b0, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
+        sheen.rotation.x = -Math.PI / 2;
+        sheen.position.copy(water.position);
+        this.scene.add(water, sheen);
+        this.floodWater = { water, sheen };
       } else if (lr.key === "crush") {
         // Two spiked stone slabs that slide in from the east and west.
         const r = lr.room;
@@ -1652,7 +2111,36 @@ export class Renderer3D {
         rig.lock.visible = !lr.unlocked;
         rig.glow.material.opacity = lr.unlocked ? 0.15 : 0.4 + 0.2 * Math.sin(t * 3 + lr.keyNo);
       }
-      if (lr.key === "candles") {
+      if (lr.kind === "crypt") {
+        let lit = 0;
+        for (const c of this.coffinRigs) {
+          const it = lr.items[c.idx];
+          const on = !!(it && it.lit);
+          c.flame.visible = on;
+          c.halo.visible = on;
+          c.lid.position.z += ((on ? 0 : 0.18) - c.lid.position.z) * Math.min(1, dt * 6);
+          if (it && it.shake > 0) { it.shake = Math.max(0, it.shake - dt); c.lid.rotation.z = Math.sin(t * 50) * 0.08 * (it.shake / 0.6); } else c.lid.rotation.z = 0;
+          if (on) { lit++; c.flame.scale.set(0.36 + Math.sin(t * 19 + c.idx) * 0.05, 0.52 + Math.sin(t * 23 + c.idx) * 0.08, 1); }
+        }
+        if (this.candleGlow) this.candleGlow.material.opacity = lit * 0.04;
+      } else if (lr.kind === "flood") {
+        const lvl = lr.wallInset || 0; // 0..1 water level
+        if (this.floodWater) {
+          const y = 0.04 + lvl * 2.0;
+          this.floodWater.water.position.y = y;
+          this.floodWater.sheen.position.y = y + 0.01;
+          this.floodWater.water.visible = lvl > 0.005;
+          this.floodWater.sheen.visible = lvl > 0.005;
+          this.floodWater.sheen.material.opacity = 0.18 + Math.sin(t * 2.5) * 0.06;
+        }
+        for (const b of this.bellRigs) {
+          const it = lr.items[b.idx];
+          if (it && it.ringT > 0) { it.ringT = Math.max(0, it.ringT - dt); }
+          const k = it ? (it.ringT || 0) : 0;
+          b.swing.rotation.x = Math.sin(t * 14) * 0.45 * k;
+          b.halo.material.opacity = it && it.pressed ? 0.55 + Math.sin(t * 4 + b.idx) * 0.1 : k * 0.6;
+        }
+      } else if (lr.key === "candles") {
         let lit = 0;
         for (const c of this.candleRigs) {
           const it = lr.items[c.idx];
@@ -1682,6 +2170,39 @@ export class Renderer3D {
     }
   }
 
+  _updateGraveyard(level, player, dt, t, mode, puzzle) {
+    if (this.merchantRig) {
+      const m = this.merchantRig;
+      m.lamp.material.opacity = 0.6 + Math.sin(t * 7) * 0.08 + Math.sin(t * 13) * 0.05;
+      m.hood.rotation.z = Math.sin(t * 0.8) * 0.06;
+      const near = player && level && level.merchant && Math.hypot(player.x - level.merchant.x, player.y - level.merchant.y) < 120;
+      m.sign.material.opacity += ((near ? 0.45 : 0) - m.sign.material.opacity) * Math.min(1, dt * 4);
+    }
+    if (this.handRigs && level && level.graves) {
+      for (const h of this.handRigs) {
+        const gr = level.graves[h.idx];
+        const k = gr ? gr.grab : 0;
+        const y = -1.4 + k * 1.25 + (k > 0 ? Math.sin(t * 22 + h.idx) * 0.05 : 0);
+        h.g.position.y += (y - h.g.position.y) * Math.min(1, dt * 14);
+        h.g.visible = h.g.position.y > -1.3;
+        h.g.rotation.y = Math.sin(t * 3 + h.idx) * 0.3;
+      }
+    }
+    if (this.crows && this.crows.length) {
+      const px = player ? player.x * S : 28, pz = player ? player.y * S : 40;
+      for (const c of this.crows) {
+        c.g.visible = !puzzle; // no crows inside the sealed chambers
+        const a = c.ph + t * c.sp;
+        const x = px + c.ox + Math.cos(a) * c.r, z = pz + c.oz - 3 + Math.sin(a) * c.r;
+        c.g.position.set(x, c.h + Math.sin(t * 1.3 + c.ph) * 0.3, z);
+        c.g.rotation.y = -a;
+        const f = Math.sin(t * 9 + c.ph) * 0.7;
+        c.wl.rotation.z = f;
+        c.wr.rotation.z = -f;
+      }
+    }
+  }
+
   _updateSecrets(level, dt) {
     if (!this.secretRigs || !level || !level.secrets) return;
     for (const d of level.secrets) {
@@ -1690,7 +2211,7 @@ export class Renderer3D {
       const target = d.opened ? 1 : 0;
       rig.open += (target - rig.open) * Math.min(1, dt * 1.6);
       if (d.opened && rig.open < 0.98) rig.open = Math.min(1, rig.open + dt * 0.85);
-      rig.wall.position.y = -WALL_H * rig.open;
+      rig.wall.position.y = -(this.wallH || WALL_H) * 1.6 * rig.open;
       rig.wall.visible = rig.open < 0.98;
       if (rig.item) rig.item.rotation.y = d.opened ? 0.4 : Math.sin(this.time * 0.6) * 0.04;
     }

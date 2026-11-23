@@ -7,7 +7,11 @@ export const MONSTER_TYPES = {
   dweller: { key: "dweller", name: "Well Dweller", hp: 80, speed: 22, chaseSpeed: 38, dmg: 16, reach: 24, windup: 0.7, cooldown: 1.6, sight: 280, radius: 13, knockResist: 1.35, aura: 200 },
   // Crate slimes (v0.5): bouncy, split once into two minis on death.
   slime: { key: "slime", name: "Crate Slime", hp: 25, speed: 46, chaseSpeed: 92, dmg: 7, reach: 18, windup: 0.32, cooldown: 1.0, sight: 300, radius: 12, knockResist: 0.9, hops: true },
-  slimelet: { key: "slimelet", name: "Mini Slime", hp: 9, speed: 60, chaseSpeed: 118, dmg: 4, reach: 14, windup: 0.22, cooldown: 0.8, sight: 300, radius: 8, knockResist: 0.6, hops: true }
+  slimelet: { key: "slimelet", name: "Mini Slime", hp: 9, speed: 60, chaseSpeed: 118, dmg: 4, reach: 14, windup: 0.22, cooldown: 0.8, sight: 300, radius: 8, knockResist: 0.6, hops: true },
+  // Stage II — The Graveyards
+  skeleton: { key: "skeleton", name: "Grave-Risen", hp: 36, speed: 46, chaseSpeed: 84, dmg: 10, reach: 20, windup: 0.4, cooldown: 1.1, sight: 320, radius: 12, knockResist: 0.9, rise: 1.4 },
+  brute: { key: "brute", name: "Gravedigger Brute", hp: 95, speed: 28, chaseSpeed: 54, dmg: 22, reach: 30, windup: 0.85, cooldown: 1.7, sight: 300, radius: 16, knockResist: 2.4 },
+  banshee: { key: "banshee", name: "Wailing Banshee", hp: 30, speed: 52, chaseSpeed: 76, dmg: 7, reach: 20, windup: 0.3, cooldown: 1.0, sight: 360, radius: 12, knockResist: 1.1, wails: true }
 };
 
 
@@ -25,7 +29,9 @@ export class Monster {
     this.maxHp = this.type.hp;
     this.angle = Math.random() * Math.PI * 2;
     this.state = "RISE"; // RISE -> WANDER/CHASE -> WINDUP -> ... -> DEAD
-    this.timer = 0.9; // rise-from-mist time
+    this.timer = this.type.rise || 0.9; // rise-from-mist (or grave) time
+    this.wailCd = 2 + Math.random() * 2;
+    this.wailing = 0;
     this.hurt = 0;
     this.flash = 0;
     this.burn = 0;
@@ -119,6 +125,18 @@ export class Monster {
     const dist = Math.hypot(dx, dy);
     const sight = T.sight * (player.lanternOn ? 1 : 0.55);
     const sees = !player.hidden && dist < sight && hasLineOfSight(level, this.x, this.y, player.x, player.y);
+
+    // Banshee: a keening wail that drains sanity and drags at your legs. She hangs still while she screams.
+    if (T.wails) {
+      if (this.wailing > 0) { this.wailing -= dt; return; }
+      this.wailCd -= dt;
+      if (sees && dist < 190 && this.wailCd <= 0) {
+        this.wailCd = 5.5 + Math.random() * 2.5;
+        this.wailing = 1.1;
+        cb.onWail && cb.onWail(this);
+        return;
+      }
+    }
 
     if (sees) {
       if (this.state === "WANDER" && cb.onSpot) cb.onSpot(this);
