@@ -11,7 +11,12 @@ export const MONSTER_TYPES = {
   // Stage II — The Graveyards
   skeleton: { key: "skeleton", name: "Grave-Risen", hp: 36, speed: 46, chaseSpeed: 84, dmg: 10, reach: 20, windup: 0.4, cooldown: 1.1, sight: 320, radius: 12, knockResist: 0.9, rise: 1.4 },
   brute: { key: "brute", name: "Gravedigger Brute", hp: 95, speed: 28, chaseSpeed: 54, dmg: 22, reach: 30, windup: 0.85, cooldown: 1.7, sight: 300, radius: 16, knockResist: 2.4 },
-  banshee: { key: "banshee", name: "Wailing Banshee", hp: 30, speed: 52, chaseSpeed: 76, dmg: 7, reach: 20, windup: 0.3, cooldown: 1.0, sight: 360, radius: 12, knockResist: 1.1, wails: true }
+  banshee: { key: "banshee", name: "Wailing Banshee", hp: 30, speed: 52, chaseSpeed: 76, dmg: 7, reach: 20, windup: 0.3, cooldown: 1.0, sight: 360, radius: 12, knockResist: 1.1, wails: true },
+  // Stage III — The Climb
+  prisoner: { key: "prisoner", name: "Chained Prisoner", hp: 40, speed: 38, chaseSpeed: 72, dmg: 11, reach: 24, windup: 0.5, cooldown: 1.25, sight: 300, radius: 13, knockResist: 1.1 },
+  ironmaiden: { key: "ironmaiden", name: "Iron Maiden Walker", hp: 110, speed: 26, chaseSpeed: 50, dmg: 24, reach: 28, windup: 0.95, cooldown: 1.9, sight: 280, radius: 16, knockResist: 3, armored: true },
+  wraith: { key: "wraith", name: "Portrait Wraith", hp: 34, speed: 50, chaseSpeed: 80, dmg: 9, reach: 20, windup: 0.32, cooldown: 1.0, sight: 360, radius: 12, knockResist: 1.0, blinks: true },
+  gargoyle: { key: "gargoyle", name: "The Tower Gargoyle", hp: 420, speed: 40, chaseSpeed: 70, dmg: 26, reach: 34, windup: 0.7, cooldown: 1.5, sight: 520, radius: 20, knockResist: 6, swoops: true, boss: true, rise: 1.8 }
 };
 
 
@@ -49,6 +54,8 @@ export class Monster {
 
   hit(dmg, fromX, fromY, knock = 60, burnSecs = 0) {
     if (this.dead || this.state === "RISE") return false;
+    // Iron maidens shrug off blows — except when the doors swing open to strike.
+    if (this.type.armored) dmg *= this.state === "WINDUP" ? 1.5 : 0.6;
     this.hp -= dmg;
     this.flash = 0.14;
     this.hurt = 0.28;
@@ -125,6 +132,50 @@ export class Monster {
     const dist = Math.hypot(dx, dy);
     const sight = T.sight * (player.lanternOn ? 1 : 0.55);
     const sees = !player.hidden && dist < sight && hasLineOfSight(level, this.x, this.y, player.x, player.y);
+
+    // Portrait wraith: steps through the dark and appears much closer.
+    if (T.blinks) {
+      if (this.blinkFx > 0) this.blinkFx -= dt;
+      this.blinkCd = (this.blinkCd === undefined ? 2 : this.blinkCd) - dt;
+      if (sees && dist > 90 && this.blinkCd <= 0) {
+        this.blinkCd = 3.5 + Math.random() * 1.5;
+        const ox = this.x, oy = this.y;
+        const k = 56 / dist;
+        this.x = player.x - dx * k;
+        this.y = player.y - dy * k;
+        resolveCircleWallCollision(level, this, this.radius, false);
+        this.blinkFx = 0.5;
+        this.state = "CHASE";
+        cb.onBlink && cb.onBlink(this, ox, oy);
+        return;
+      }
+    }
+
+    // Gargoyle (boss): every few seconds it beats its wings and swoops straight at you.
+    if (T.swoops) {
+      this.swoopCd = (this.swoopCd === undefined ? 3 : this.swoopCd) - dt;
+      if (this.swooping > 0) {
+        this.swooping -= dt;
+        this.x += this.swoopDir.x * 300 * dt;
+        this.y += this.swoopDir.y * 300 * dt;
+        this.angle = Math.atan2(this.swoopDir.y, this.swoopDir.x);
+        resolveCircleWallCollision(level, this, this.radius, false);
+        if (!this.swoopHit && !player.hidden && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius + 10) {
+          this.swoopHit = true;
+          cb.onHitPlayer(this);
+        }
+        if (this.swooping <= 0) { this.swooping = 0; this.cooldown = 0.8; }
+        return;
+      }
+      if (sees && this.state !== "WINDUP" && dist > 70 && dist < 320 && this.swoopCd <= 0) {
+        this.swoopCd = 5.5 + Math.random() * 1.5;
+        this.swooping = 0.75;
+        this.swoopHit = false;
+        this.swoopDir = { x: dx / dist, y: dy / dist };
+        cb.onSwoop && cb.onSwoop(this);
+        return;
+      }
+    }
 
     // Banshee: a keening wail that drains sanity and drags at your legs. She hangs still while she screams.
     if (T.wails) {

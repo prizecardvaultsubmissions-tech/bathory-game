@@ -454,4 +454,30 @@ export class SoundEngine {
     this._tone(55, 0.8, { type: "sine", gain: 0.12, to: 40 });
   }
   playWater() { this._noise(0.9, { type: "bandpass", freq: 700, q: 0.4, gain: 0.07, decay: 0.8 }); }
+
+  // ---- v0.7: the Climb ----
+  playStairs() {
+    for (let i = 0; i < 6; i++) this._noise(0.09, { type: "lowpass", freq: 520 - i * 30, gain: 0.16, decay: 0.25, delay: i * 0.13 });
+    this._tone(65, 1.0, { type: "sine", gain: 0.06, to: 49, delay: 0.3 });
+  }
+  playMirrorTurn() {
+    this._noise(0.22, { type: "bandpass", freq: 1800, q: 2, gain: 0.08, decay: 0.4 });
+    this._tone(1568, 0.35, { type: "sine", gain: 0.04, delay: 0.05 });
+  }
+  playBeam(ok = true) {
+    this._tone(ok ? 880 : 330, 1.2, { type: "triangle", gain: 0.06, to: ok ? 1320 : 220 });
+    this._noise(0.6, { type: "highpass", freq: 3000, gain: 0.06, decay: 0.5 });
+  }
+  playTick() { this._tone(2200, 0.03, { type: "square", gain: 0.02 }); }
+  playStrike() {
+    [1, 2.76, 5.4].forEach((m, i) => this._tone(196 * m, 2.2, { type: "sine", gain: 0.1 / (i + 1) }));
+  }
+  playBookPull() {
+    this._noise(0.25, { type: "bandpass", freq: 900, q: 0.7, gain: 0.14, decay: 0.4 });
+    this._tone(140, 0.15, { type: "triangle", gain: 0.06, delay: 0.12 });
+  }
+  playScreech() {
+    this._tone(1400, 0.6, { type: "sawtooth", gain: 0.05, to: 600 });
+    this._noise(0.5, { type: "bandpass", freq: 2200, q: 2, gain: 0.1, decay: 0.5 });
+  }
 }

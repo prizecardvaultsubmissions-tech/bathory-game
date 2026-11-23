@@ -69,3 +69,32 @@ export const GRAVE_RUBBINGS = [
     witchingPostscript: "WITCHING HOUR NOTE: The graveyard fog reads your clock too. It is thicker after midnight."
   }
 ];
+
+// Stage III — The Climb. Five wax seals, one per floor; each unbars the stair above. (Original fiction.)
+export const TOWER_SEALS = [
+  {
+    num: "TOWER SEAL I",
+    title: "The Cellarer's Tally",
+    body: "Pressed into the wax: a cask and a key. On the back, in the cellarer's hand: \u201cForty casks of Tokaj came down this winter. I am told to stop counting what goes up.\u201d The stair door above the vaults unbars with a dull iron cough."
+  },
+  {
+    num: "TOWER SEAL II",
+    title: "The Gaoler's Ring",
+    body: "A seal cut with a ring of chain. The gaoler kept a list of names here and struck one out every week. The last line is in a different hand, very neat: \u201cThe gaoler.\u201d"
+  },
+  {
+    num: "TOWER SEAL III",
+    title: "The Housekeeper's Ledger",
+    body: "Linen, candles, lye, salt — and in the margin, again and again, \u201cmore linen.\u201d The housekeeper sealed this page and hid it under the floorboard where the maids slept, so that someone, someday, would ask why."
+  },
+  {
+    num: "TOWER SEAL IV",
+    title: "The Physician's Letter",
+    body: "Unsent, sealed with the physician's own signet: \u201cMy lady asks again for a remedy to keep her skin from age. I have told her there is none. She smiled at that, and asked me to stay the night in the tower.\u201d The candle wax is still soft."
+  },
+  {
+    num: "TOWER SEAL V",
+    title: "Her Own Hand",
+    body: "The last seal is hers: a dragon's tooth curled about a crown. Inside, only one line, in a beautiful hand: \u201cWhoever climbs this far has earned the view.\u201d Above, something heavy shifts on the battlements."
+  }
+];

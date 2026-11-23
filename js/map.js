@@ -1,5 +1,6 @@
 import { LEDGER_PAGES } from "./lore.js";
 import { STAGE2 } from "./stage2.js";
+import { STAGE3, floorAt } from "./stage3.js";
 
 export const TILE_SIZE = 44;
 export const COLS = 58;
@@ -190,7 +191,7 @@ const STAGE1 = {
   locked: LOCKED_ROOMS, secrets: SECRET_DOORS, lore: LEDGER_PAGES,
   merchant: [54, 39]
 };
-export const STAGES = { 1: STAGE1, 2: STAGE2 };
+export const STAGES = { 1: STAGE1, 2: STAGE2, 3: STAGE3 };
 
 export function createLevel(stageNo = 1) {
   const def = STAGES[stageNo] || STAGE1;
@@ -209,7 +210,8 @@ export function createLevel(stageNo = 1) {
   const center0 = (tx, ty) => ({ x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE });
   const breakables = BREAKABLE_DEFS.map(([type, tx, ty], i) => {
     grid[ty][tx] = 3;
-    return { id: i, type, tx, ty, ...center0(tx, ty), hp: (type === "barrel" || type === "urn") ? 2 : 3, maxHp: (type === "barrel" || type === "urn") ? 2 : 3, broken: false, hitT: 0 };
+    const hp = (type === "barrel" || type === "urn" || type === "cask") ? 2 : 3;
+    return { id: i, type, tx, ty, ...center0(tx, ty), hp, maxHp: hp, broken: false, hitT: 0 };
   });
   const lockedRooms = LOCKED_ROOMS.map((d) => {
     const room = ROOMS.find((r) => r.key === d.key);
@@ -217,7 +219,7 @@ export function createLevel(stageNo = 1) {
     grid[dy][dx] = 1;
     const items = (d.candles || d.plates || d.items).map(([sym, tx, ty], i) => {
       grid[ty][tx] = 3;
-      return { i, sym, tx, ty, ...center0(tx, ty), lit: false, pressed: false };
+      return { i, sym, tx, ty, ...center0(tx, ty), lit: false, pressed: false, rot: d.start ? d.start[sym] : undefined };
     });
     return {
       ...d, room, items, doorX: center0(dx, dy).x, doorY: center0(dx, dy).y,
@@ -241,7 +243,7 @@ export function createLevel(stageNo = 1) {
   const bolts = FEATURES.bolts.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false }));
   const spawns = FEATURES.spawns.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
   const wellTile = (PROP_DEFS.well || PROP_DEFS.fountain)[0];
-  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile), fountain: !PROP_DEFS.well };
+  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile), fountain: !PROP_DEFS.well, cistern: def.stage === 3 };
   const merchant = def.merchant ? { tx: def.merchant[0], ty: def.merchant[1], ...center(...def.merchant) } : null;
   if (merchant) grid[merchant.ty][merchant.tx] = 3;
   const graves = (PROP_DEFS.grave || []).map(([tx, ty], i) => ({ i, tx, ty, ...center(tx, ty), grab: 0, cd: 1 + i * 0.37 }));
@@ -282,7 +284,12 @@ export function createLevel(stageNo = 1) {
     well,
     secrets,
     breakables,
-    lockedRooms
+    lockedRooms,
+    // v0.7 — Stage III floors & stairs
+    floors: def.floors || null,
+    stairs: (def.stairs || []).map((s, i) => ({ ...s, id: i, ...center(s.tx, s.ty), ax: center(...s.arrive).x, ay: center(...s.arrive).y })),
+    bossSpawn: def.boss ? center(...def.boss) : null,
+    floorAt: def.floors ? floorAt : () => 0
   };
 }
 

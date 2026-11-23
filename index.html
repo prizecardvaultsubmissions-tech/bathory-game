@@ -77,6 +77,10 @@
       <div class="freeze-time" id="freeze-time">0.0</div>
       <div class="freeze-track"><div id="freeze-fill"></div></div>
     </div>
+    <div id="boss-bar" class="boss-bar hidden" aria-label="Boss health">
+      <div class="boss-name">THE TOWER GARGOYLE</div>
+      <div class="boss-track"><div id="boss-fill"></div></div>
+    </div>
     <div id="puzzle-hud" class="puzzle-hud hidden">
       <div class="puzzle-row"><span id="puzzle-title" class="puzzle-title"></span><button id="btn-riddle" class="riddle-btn" type="button">RIDDLE</button></div>
       <div id="puzzle-info" class="puzzle-info"></div>
@@ -158,6 +162,7 @@
             <span class="stage-select-label">STAGE SELECT</span>
             <button id="btn-stage-1" class="stage-chip" type="button">I · CASTLE</button>
             <button id="btn-stage-2" class="stage-chip moon" type="button">II · GRAVEYARDS</button>
+            <button id="btn-stage-3" class="stage-chip tower hidden" type="button">III · THE CLIMB</button>
           </div>
         </div>
         <div id="title-purse" class="title-purse"></div>
@@ -171,6 +176,7 @@
             <input type="checkbox" id="chk-curse" />
             <span>Opt-In Curse Alerts</span>
           </label>
+          <button id="btn-quality" class="toggle-chip quality-chip" type="button" aria-label="Graphics quality">✦ GRAPHICS: <b class="q-label">AUTO</b></button>
         </div>
         <p class="curse-note">
           Curse Alerts are 100% harmless &amp; opt-in local whispers. Keys: WASD move · Space attack · E act · F douse · Q flare · R mirror.
@@ -235,14 +241,14 @@
     <section id="screen-stage" class="overlay-screen hidden">
       <div class="card-frame stage-card-frame">
         <div class="stage-moon" aria-hidden="true"></div>
-        <div class="build-tag gold-text">STAGE I CLEARED</div>
-        <div class="stage-next">STAGE II</div>
-        <h2 class="stage-title">THE GRAVEYARDS</h2>
-        <p class="subtitle">
+        <div id="stage-tag" class="build-tag gold-text">STAGE I CLEARED</div>
+        <div id="stage-next" class="stage-next">STAGE II</div>
+        <h2 id="stage-title" class="stage-title">THE GRAVEYARDS</h2>
+        <p id="stage-blurb" class="subtitle">
           Beyond the gate the road drops into the old burial yards of Csejte — fog, crows and five hundred crooked stones. Take five grave rubbings and reach the Gatehouse road. She is already walking among the graves.
         </p>
         <div class="stats-grid">
-          <div class="stat-box"><span>STAGE I TIME</span><strong id="stage-time">0:00</strong></div>
+          <div class="stat-box"><span id="stage-time-label">STAGE I TIME</span><strong id="stage-time">0:00</strong></div>
           <div class="stat-box"><span>SLAIN</span><strong id="stage-kills">0</strong></div>
           <div class="stat-box"><span>PURSE</span><strong id="stage-coins">0</strong></div>
         </div>
@@ -270,6 +276,8 @@
           <li><strong>The Hooded Pedlar:</strong> A hooded merchant keeps a stall in a quiet corner of each stage (the east end of the Outer Ward; the south-east corner of the Chapel Graveyard) and also meets you between stages. Tap <em>SHOP</em>. Supplies: health draught, sanity salts, lamp oil, armor, mirrors, bolts, speed tonic, weapon swap. <em>Permanent blessings</em> (Iron Heart, Whetstone, Wider Wick, Silvered Glass) are kept forever. The game pauses while you trade.</li>
           <li><strong>Coins &amp; your purse:</strong> Coins carry from Stage I into Stage II and are saved in your purse. If you die you keep the coins you carried in (minus anything you spent) plus <em>half</em> of what you picked up that run.</li>
           <li><strong>Stage II · The Graveyards:</strong> Escape the castle with all five pages to unlock it (then use <em>CONTINUE</em> on the title screen). Take five <em>grave rubbings</em> across six yards and leave by the Gatehouse road. <em>Grave-risen</em> skeletons claw out of the earth, <em>Gravedigger Brutes</em> hit hard, and <em>Banshees</em> wail to drain sanity and slow you. <em>Open graves</em> have hands — keep your distance. Coffins and urns break like crates. The <em>black fountain</em> takes offerings like the well. Keys fall at 15 and 30 kills again for the <em>Crypt of Names</em> and the <em>Drowned Mausoleum</em>.</li>
+          <li><strong>Stage III · The Climb:</strong> Escape the Graveyards to unlock it. Six floors of the tower, one above the other: the <em>Cellar &amp; Wine Vaults</em>, the <em>Torture Chambers</em>, the <em>Servants' Floor</em>, the <em>Library &amp; Study</em>, the <em>Countess's Bedchamber</em> and the <em>Tower Top</em>. Every floor's stair up is barred until you break that floor's <em>Tower Seal</em>; tap <em>CLIMB</em> / <em>DESCEND</em> at a stair. She follows you a few seconds later, and she grows faster and sharper-eyed the higher you go. New foes: <em>Chained Prisoners</em>, armored <em>Iron Maiden Walkers</em> (strike while their doors are open), <em>Portrait Wraiths</em> that blink toward you, and bat swarms. Casks, crates and bookshelves break. The Pedlar keeps a stall on the Servants' Floor. On the roof, kill the <em>Tower Gargoyle</em> (it swoops — sidestep) to open the dawn stair. Keys at 15 and 30 kills open the <em>Hall of Mirrors</em> (turn four glasses, then open the lamp) and the timed <em>Clock Library</em> (pull the hour-books in order).</li>
+          <li><strong>Graphics:</strong> Tap <em>GRAPHICS</em> on the title or pause screen to cycle AUTO / LOW / MEDIUM / HIGH. AUTO drops quality if your frame rate falls.</li>
           <li><strong>The Countess:</strong> She cannot be harmed. Blows only make her recoil. If she catches you in the open, you die.</li>
           <li><strong>Mirrors:</strong> Only a few lie in the castle — most come from fallen servants. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
           <li><strong>Lantern &amp; Stealth:</strong> Light lets you see but she sees it too. <em>DOUSE</em> to vanish, though darkness drains <strong>Sanity</strong>.</li>
@@ -280,6 +288,7 @@
         </ul>
         <div class="title-buttons">
           <button id="btn-help-close" class="gothic-btn primary-cta" type="button">RESUME</button>
+          <button id="btn-quality-pause" class="gothic-btn secondary-cta quality-chip" type="button">✦ GRAPHICS: <b class="q-label">AUTO</b></button>
           <button id="btn-help-quit" class="gothic-btn secondary-cta hidden" type="button">RETURN TO TITLE</button>
         </div>
       </div>
@@ -305,6 +314,7 @@
         <div class="death-emblem">✕</div>
         <div class="build-tag crimson-text">THE LEDGER CLAIMS ANOTHER NAME</div>
         <h2>TAKEN IN THE DARK</h2>
+        <div id="death-stage" class="death-stage"></div>
         <p id="death-reason" class="subtitle"></p>
         <div class="stats-grid">
           <div class="stat-box"><span id="death-pages-label">PAGES</span><strong id="death-pages">0 / 5</strong></div>
@@ -327,9 +337,9 @@
       <div class="card-frame win-card">
         <div class="win-emblem">♛</div>
         <div class="build-tag gold-text">HOUSE OF HORRORS // RELIC UNLOCKED</div>
-        <h2>THE GRAVEYARDS FALL SILENT</h2>
+        <h2>DAWN OVER CSEJTE</h2>
         <p class="subtitle">
-          Five rubbings rolled tight in your coat, you pass under the Gatehouse arch as the crows lift all at once. Behind you, the Countess stands among the stones and does not follow — not tonight.
+          The gargoyle lies in pieces on the parapet and the five Tower Seals are cold in your coat. You take the dawn stair down the outside of the tower as the sun clears the hills. Far below, at the cellar door, a woman in a red gown watches you go — and, for the first time, steps back into the dark.
         </p>
         <div class="stats-grid">
           <div class="stat-box"><span>ESCAPE TIME</span><strong id="win-time">0:00</strong></div>
@@ -340,8 +350,8 @@
         </div>
         <div class="relic-card">
           <div class="relic-foil">FOIL SEAL UNLOCKED</div>
-          <div class="relic-name">Elizabeth Báthory — The Csejte Ledger</div>
-          <div class="relic-sub">Castle &amp; Graveyards Escaped • Prototype Build v0.6</div>
+          <div class="relic-name">Elizabeth Báthory — The Tower Seals</div>
+          <div class="relic-sub">Castle, Graveyards &amp; Tower Escaped • Prototype Build v0.7</div>
         </div>
         <div class="title-buttons">
           <button id="btn-play-again" class="gothic-btn primary-cta" type="button">PLAY AGAIN</button>

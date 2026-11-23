@@ -1,4 +1,4 @@
-"""Playwright QA for v0.6: Hooded Pedlar shop (both locations), permanent upgrades, purse rule,
+"""Playwright QA for v0.6 (updated for v0.7 Stage II -> III flow): Hooded Pedlar shop (both locations), permanent upgrades, purse rule,
 stage transition, Stage II Graveyards loop, new monsters, grave hands, both new puzzle rooms (solved + failed).
 Usage: /workspace/.venv-pw/bin/python qa/qa_stage2.py [base_url] [--noshots]
 """
@@ -273,11 +273,14 @@ try:
         page.locator("#btn-retry").tap(); W(700); q(CALM)
         check("retry_stays_stage2", q("window.__qa.level.stage") == 2)
         m = q("window.__qa.clearStage()"); W(600)
-        check("stage2_win", m == "WIN" and "v0.6" in q("document.querySelector('.relic-sub').textContent"))
-        page.locator("#btn-win-title").tap(); W(500)
+        # v0.7: clearing Stage II leads on to Stage III (The Climb) instead of the final win screen
+        st = q("[document.getElementById('stage-title').textContent, document.getElementById('stage-tag').textContent, window.__qa.stage3Unlocked]")
+        check("stage2_clear_to_climb", m == "STAGECLEAR" and st[0] == "THE CLIMB" and "STAGE II" in st[1] and st[2] is True, [m, st])
+        page.locator("#btn-stage-title").tap(); W(500)
         check("title_continue_visible", not q("document.getElementById('title-stages').classList.contains('hidden')"))
+        check("continue_says_stage3", "STAGE III" in q("document.getElementById('btn-continue').textContent") and not q("document.getElementById('btn-stage-3').classList.contains('hidden')"))
         shot(page, "44-title-continue.png")
-        page.locator("#btn-continue").tap(); W(400)
+        page.locator("#btn-stage-2").tap(); W(400)
         page.locator("#btn-begin").tap(); W(800)
         check("continue_starts_stage2", q("[window.__qa.mode, window.__qa.level.stage]") == ["PLAYING", 2])
         q("window.__qa.newRun()"); W(500)

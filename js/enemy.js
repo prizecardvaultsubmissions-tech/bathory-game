@@ -30,6 +30,7 @@ export class CountessAI {
     this.farTimer = 0;
     this.stuckTimer = 0;
     this.lastPos = { x: spawn.x, y: spawn.y };
+    this.aggro = 1; // v0.7: Stage III floors make her faster and sharper-eyed the higher you climb
   }
 
   alertAt(x, y) {
@@ -93,6 +94,7 @@ export class CountessAI {
 
     let detectDist = player.lanternOn ? 255 : 88;
     if (this.witchingHour) detectDist *= 1.12;
+    detectDist *= Math.min(1.3, this.aggro);
     if (player.hidden) detectDist = 0;
 
     let canSeePlayer = false;
@@ -126,7 +128,7 @@ export class CountessAI {
     // In a big castle she drifts toward you: if far away for a while she re-manifests nearby, out of sight.
     if (this.state === AI_STATE.PATROL && distToPlayer > TILE_SIZE * 22) {
       this.farTimer += dt;
-      if (this.farTimer > 22) {
+      if (this.farTimer > 22 / this.aggro) {
         this.farTimer = 0;
         this._manifestNear(level, player, callbacks);
       }
@@ -138,6 +140,7 @@ export class CountessAI {
     if (this.state === AI_STATE.INVESTIGATE) speed = 94;
     if (this.state === AI_STATE.SEARCH) speed = 76;
     if (this.state === AI_STATE.HUNT) speed = this.witchingHour ? 128 : 118;
+    speed *= this.aggro;
 
     if (this.state === AI_STATE.PATROL) {
       const wp = this.waypoints[this.wpIndex];
@@ -180,6 +183,24 @@ export class CountessAI {
     if (!player.hidden && distToPlayer < this.radius + player.radius - 2) {
       if (callbacks.onCaught) callbacks.onCaught();
     }
+  }
+
+  setWaypoints(wps) {
+    if (!wps || !wps.length) return;
+    this.waypoints = wps;
+    this.wpIndex = 0;
+  }
+
+  // Put her down at a waypoint far from the player (used when she follows you up a stair).
+  arriveFar(player) {
+    const sorted = [...this.waypoints].sort((a, b) => Math.hypot(b.x - player.x, b.y - player.y) - Math.hypot(a.x - player.x, a.y - player.y));
+    const w = sorted[0];
+    this.x = w.x; this.y = w.y;
+    this.lastPos = { x: w.x, y: w.y };
+    this.state = AI_STATE.PATROL;
+    this.wpIndex = this.waypoints.indexOf(w);
+    this.farTimer = 0;
+    this.stuckTimer = 0;
   }
 
   _pickWaypoint(player) {

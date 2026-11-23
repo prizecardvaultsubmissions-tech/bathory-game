@@ -5,14 +5,29 @@ import {
   MIRROR_TIERS, MIRROR_ORDER, openSecret, isPassableTile, setDoor, PUZZLE_GLYPHS
 } from "./map.js";
 import { Renderer3D } from "./render3d.js";
+import { QualityManager } from "./quality.js";
 import { AI_STATE, CountessAI } from "./enemy.js";
 import { Monster, MONSTER_TYPES } from "./monsters.js";
 import { WEAPONS, WEAPON_ORDER } from "./weapons.js";
+import { traceBeam } from "./stage3.js";
 
 const canvas = document.getElementById("game-canvas");
 const renderer3d = new Renderer3D(canvas);
 const sound = new SoundEngine();
 const $ = (id) => document.getElementById(id);
+
+// v0.7 graphics quality (LOW / MEDIUM / HIGH / AUTO by frame rate)
+const quality = new QualityManager();
+renderer3d.applyQuality(quality.preset);
+function refreshQualityButtons() {
+  document.querySelectorAll(".q-label").forEach((el) => { el.textContent = quality.label(); });
+}
+quality.onChange((p) => { renderer3d.applyQuality(p); refreshQualityButtons(); });
+for (const id of ["btn-quality", "btn-quality-pause"]) {
+  const b = $(id);
+  if (b) b.addEventListener("click", (e) => { e.preventDefault(); quality.cycle(); });
+}
+refreshQualityButtons();
 
 // DOM
 const hudEl = $("hud");
@@ -126,6 +141,13 @@ let grindTimer = 0;
 let warnedWail = false;
 let warnedHands = false;
 const KEY_KILLS = [15, 30];
+// v0.7 — Stage III state
+let curFloor = 0;         // floor of the tower you're on (Stage III only)
+let countessAway = 0;     // seconds until she follows you up/down a stair
+let stairCd = 0;
+let boss = null;          // the Tower Gargoyle
+let shutterCd = 0;
+let tickTimer = 0;
 
 // ---------------------------------------------------------------- persistence (v0.6)
 // Coins live in a purse saved between runs; upgrades and the Stage II unlock are permanent.
@@ -134,6 +156,14 @@ function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === nul
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 let upgrades = Object.assign({ heart: 0, edge: 0, wick: 0, glass: 0 }, lsGet(LS_UP, {}));
 let stage2Unlocked = !!lsGet(LS_S2, false);
+const LS_S3 = "csejte_stage3";
+let stage3Unlocked = !!lsGet(LS_S3, false);
+const STAGE_NAMES = { 1: "CSEJTE CASTLE", 2: "THE GRAVEYARDS", 3: "THE CLIMB" };
+const ROMAN = ["", "I", "II", "III", "IV", "V", "VI"];
+function isS3() { return !!(level && level.stage === 3); }
+// The exit opens on five collectibles — and in the tower, only once the roof's guardian is dead.
+function gateOpen() { return !!player && player.pagesFound >= 5 && (!isS3() || !!level.bossDead); }
+function floorOfXY(x, y) { return level.floorAt(Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)); }
 let currentStage = 1;     // stage of the run in progress
 let pendingStage = 1;     // stage the armory's BEGIN button will start
 let runStartCoins = 0;    // coins carried into this run (for the death rule)
@@ -298,6 +328,7 @@ function startNewRun(stage = pendingStage, carry = null) {
   }
   runStartCoins = player.coins;
   countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour, pathing);
+  curFloor = 0; countessAway = 0; stairCd = 0; boss = null; shutterCd = 0; tickTimer = 0;
   monsters = [];
   projectiles = [];
   drops = [];
@@ -307,6 +338,8 @@ function startNewRun(stage = pendingStage, carry = null) {
   warnedCountessImmune = false;
   inPuzzle = null; keysAwarded = 0; grindTimer = 0; warnedWail = false; warnedHands = false;
   if (puzzleHud) puzzleHud.classList.add("hidden");
+  const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
+  if (stage === 3) enterFloor(1, { initial: true });
   buildMinimapBase();
 
   hideAllScreens();
@@ -322,11 +355,14 @@ function startNewRun(stage = pendingStage, carry = null) {
 function showStageCard(stage) {
   const el = $("stage-card");
   if (!el) return;
-  $("stage-card-num").textContent = stage === 2 ? "STAGE II" : "STAGE I";
-  $("stage-card-title").textContent = stage === 2 ? "THE GRAVEYARDS" : "CSEJTE CASTLE";
-  $("stage-card-sub").textContent = stage === 2
+  $("stage-card-num").textContent = `STAGE ${ROMAN[stage]}`;
+  $("stage-card-title").textContent = STAGE_NAMES[stage];
+  $("stage-card-sub").textContent = stage === 3
+    ? "Floor I · The Cellar — break a Tower Seal on every floor and climb"
+    : stage === 2
     ? "Take five grave rubbings · escape by the Gatehouse road"
     : "Recover five ledger pages · escape by the North Gate";
+  el.classList.remove("floor");
   el.classList.remove("hidden");
   el.style.animation = "none";
   void el.offsetWidth;
@@ -357,17 +393,23 @@ function showTitle() {
   screenTitle.classList.remove("hidden");
 }
 
+function highestStage() { return stage3Unlocked ? 3 : stage2Unlocked ? 2 : 1; }
 function refreshTitleStages() {
   const row = $("title-stages");
   if (!row) return;
   row.classList.toggle("hidden", !stage2Unlocked);
+  const c3 = $("btn-stage-3");
+  if (c3) c3.classList.toggle("hidden", !stage3Unlocked);
+  const cont = $("btn-continue");
+  if (cont) cont.textContent = highestStage() === 3 ? "☾ CONTINUE · STAGE III: THE CLIMB" : "☾ CONTINUE · STAGE II: THE GRAVEYARDS";
   const purse = $("title-purse");
   if (purse) purse.textContent = `◉ ${loadPurse()} coins in your purse`;
 }
 $("btn-start").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
 if ($("btn-stage-1")) $("btn-stage-1").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
 if ($("btn-stage-2")) $("btn-stage-2").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = 2; showWeaponSelect(); });
-if ($("btn-continue")) $("btn-continue").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = 2; showWeaponSelect(); });
+if ($("btn-stage-3")) $("btn-stage-3").addEventListener("click", () => { if (!stage3Unlocked) return; pendingStage = 3; showWeaponSelect(); });
+if ($("btn-continue")) $("btn-continue").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = highestStage(); showWeaponSelect(); });
 btnBegin.addEventListener("click", () => startNewRun(pendingStage));
 $("btn-weapon-back").addEventListener("click", showTitle);
 $("btn-how").addEventListener("click", () => {
@@ -459,8 +501,9 @@ function triggerInteract() {
     loreNum.textContent = p.lore.num;
     loreBody.classList.remove("riddle");
     const S2 = level.stage === 2;
-    if (loreSeal) loreSeal.textContent = S2 ? "CHARCOAL RUBBING TAKEN" : "WAX SEAL BROKEN";
-    loreCloseBtn.textContent = S2 ? "POCKET RUBBING (+12% SANITY)" : "POCKET PAGE (+12% SANITY)";
+    if (loreSeal) loreSeal.textContent = isS3() ? "TOWER SEAL BROKEN" : S2 ? "CHARCOAL RUBBING TAKEN" : "WAX SEAL BROKEN";
+    loreCloseBtn.textContent = isS3() ? "POCKET THE SEAL (+12% SANITY)" : S2 ? "POCKET RUBBING (+12% SANITY)" : "POCKET PAGE (+12% SANITY)";
+    if (isS3()) openStairsUp(floorOfXY(p.x, p.y));
     loreTitle.textContent = p.lore.title;
     loreBody.textContent = p.lore.body;
     if (p.lore.witchingPostscript && isWitchingHour) {
@@ -469,7 +512,8 @@ function triggerInteract() {
     } else lorePostscript.classList.add("hidden");
     mode = "LORE";
     screenLore.classList.remove("hidden");
-    if (player.pagesFound >= 5) toast(S2 ? "All five rubbings taken — the Gatehouse road is open!" : "All five seals broken — the North Gate is open!", 4);
+    if (player.pagesFound >= 5 && isS3()) toast(level.bossDead ? "All five seals broken — the dawn stair is open!" : "All five seals broken. Only the roof remains — and what guards it.", 4);
+    else if (player.pagesFound >= 5) toast(S2 ? "All five rubbings taken — the Gatehouse road is open!" : "All five seals broken — the North Gate is open!", 4);
     updateHud();
   } else if (nearbyContext.type === "alcove") {
     player.hidden = true;
@@ -480,7 +524,7 @@ function triggerInteract() {
     sound.playDouse(false);
     updateHud();
   } else if (nearbyContext.type === "exit") {
-    if (player.pagesFound >= 5) handleWin();
+    if (gateOpen()) handleWin();
   } else if (nearbyContext.type === "well") {
     tossWell();
   } else if (nearbyContext.type === "secret") {
@@ -497,6 +541,14 @@ function triggerInteract() {
     ringBell(nearbyContext.obj);
   } else if (nearbyContext.type === "merchant") {
     openShop("field");
+  } else if (nearbyContext.type === "stair") {
+    takeStair(nearbyContext.obj);
+  } else if (nearbyContext.type === "mirror") {
+    turnMirror(nearbyContext.obj);
+  } else if (nearbyContext.type === "shutter") {
+    openShutter();
+  } else if (nearbyContext.type === "book") {
+    pullBook(nearbyContext.obj);
   }
 }
 
@@ -595,6 +647,14 @@ function tryAttack() {
 
 function onMonsterKilled(m, forcedKind = null, opts = {}) {
   kills += 1;
+  if (m.kind === "gargoyle") {
+    level.bossDead = true;
+    boss = null;
+    shake = Math.max(shake, 1.0);
+    sound.playSolve();
+    spawnDrop("coins", m.x, m.y, { amount: 60 });
+    showBoon("key", "THE GARGOYLE SHATTERS", gateOpen() ? "Stone rains over the parapet. The dawn stair is open — run north!" : "The roof is clear. Break every Tower Seal to open the dawn stair.", 4.5);
+  }
   checkKeyDrops(m);
   if (m.kind === "slime") {
     // Splits once into two minis
@@ -898,7 +958,7 @@ function useMirror(auto = false) {
     const a = Math.atan2(player.y - countess.y, player.x - countess.x);
     player.x += Math.cos(a) * 18;
     player.y += Math.sin(a) * 18;
-    resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
+    resolveCircleWallCollision(level, player, player.radius, gateOpen());
     toast(`Her hand closed — your ${T.name} shattered! RUN!`, 3);
   } else {
     toast(`${T.name}: frozen for ${secs}s`, 2.2);
@@ -1007,14 +1067,17 @@ function handleDeath(reason) {
   const kept = purseAfterDeath();
   savePurse(kept);
   const deathCoins = $("death-coins"); if (deathCoins) deathCoins.textContent = `${kept}`;
-  const dp = $("death-pages-label"); if (dp) dp.textContent = level.stage === 2 ? "RUBBINGS" : "PAGES";
+  const dp = $("death-pages-label"); if (dp) dp.textContent = isS3() ? "SEALS" : level.stage === 2 ? "RUBBINGS" : "PAGES";
+  const dst = $("death-stage"); if (dst) dst.textContent = isS3() && curFloor ? `STAGE III · FLOOR ${ROMAN[curFloor]} — ${level.floors[curFloor - 1].name.toUpperCase()}` : `STAGE ${ROMAN[level.stage]} — ${STAGE_NAMES[level.stage]}`;
+  const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
   screenDeath.classList.remove("hidden");
 }
 
 function handleWin() {
   if (mode !== "PLAYING") return;
-  if (currentStage === 1) { handleStageClear(); return; }
+  if (currentStage < 3) { handleStageClear(); return; }
   mode = "WIN";
+  const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
   savePurse(player.coins);
   sound.playWin();
   clearDeathEcho();
@@ -1033,10 +1096,14 @@ function handleStageClear() {
   sound.playWin();
   clearDeathEcho();
   endRunUi();
+  const cleared = currentStage;
   stage2Unlocked = true;
   lsSet(LS_S2, true);
+  if (cleared >= 2) { stage3Unlocked = true; lsSet(LS_S3, true); }
   savePurse(player.coins);
+  setStageScreen(cleared + 1);
   carryOver = {
+    next: cleared + 1,
     weapon: player.weapon, ammo: player.ammo, mirrors: { ...player.mirrors },
     armor: player.armor, coins: player.coins, speedBoost: 0
   };
@@ -1044,6 +1111,19 @@ function handleStageClear() {
   $("stage-kills").textContent = String(kills);
   $("stage-coins").textContent = String(player.coins);
   screenStageShow();
+}
+const STAGE_SCREENS = {
+  2: { tag: "STAGE I CLEARED", next: "STAGE II", title: "THE GRAVEYARDS", timeLabel: "STAGE I TIME", enter: "ENTER THE GRAVEYARDS",
+    blurb: "Beyond the gate the road drops into the old burial yards of Csejte — fog, crows and five hundred crooked stones. Take five grave rubbings and reach the Gatehouse road. She is already walking among the graves." },
+  3: { tag: "STAGE II CLEARED", next: "STAGE III", title: "THE CLIMB", timeLabel: "STAGE II TIME", enter: "DESCEND INTO THE CELLAR",
+    blurb: "The Gatehouse road loops back to the castle's oldest door: the tower cellar. Six floors stand between you and the dawn — wine vaults, the torture chambers, the servants' floor, the library, her bedchamber, and the roof. Break a Tower Seal on every floor. She will follow you up every stair." }
+};
+function setStageScreen(n) {
+  const d = STAGE_SCREENS[n] || STAGE_SCREENS[2];
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set("stage-tag", d.tag); set("stage-next", d.next); set("stage-title", d.title);
+  set("stage-blurb", d.blurb); set("stage-time-label", d.timeLabel); set("btn-stage-enter", d.enter);
+  const el = $("screen-stage"); if (el) el.classList.toggle("climb", n === 3);
 }
 function screenStageShow() {
   const el = $("screen-stage");
@@ -1057,7 +1137,7 @@ function enterStage2() {
   sound.playStage();
   const carry = carryOver;
   carryOver = null;
-  startNewRun(2, carry);
+  startNewRun(carry && carry.next ? carry.next : 2, carry);
 }
 if ($("btn-stage-enter")) $("btn-stage-enter").addEventListener("click", enterStage2);
 if ($("btn-stage-shop")) $("btn-stage-shop").addEventListener("click", () => { $("screen-stage").classList.add("hidden"); openShop("between"); });
@@ -1348,7 +1428,11 @@ function updateHud() {
     else if (nearbyContext.type === "door") interactLabel.textContent = player.keys[nearbyContext.obj.keyNo] === "held" ? "UNLOCK" : "LOCKED";
     else if (nearbyContext.type === "candle") interactLabel.textContent = "LIGHT";
     else if (nearbyContext.type === "plate") interactLabel.textContent = "PRESS";
-    else if (nearbyContext.type === "exit") interactLabel.textContent = player.pagesFound >= 5 ? "ESCAPE" : "SEALED";
+    else if (nearbyContext.type === "exit") interactLabel.textContent = gateOpen() ? "ESCAPE" : "SEALED";
+    else if (nearbyContext.type === "stair") interactLabel.textContent = nearbyContext.obj.dir === "up" ? (nearbyContext.obj.open ? "CLIMB" : "BARRED") : "DESCEND";
+    else if (nearbyContext.type === "mirror") interactLabel.textContent = "TURN";
+    else if (nearbyContext.type === "shutter") interactLabel.textContent = "OPEN";
+    else if (nearbyContext.type === "book") interactLabel.textContent = "PULL";
   } else { interactLabel.textContent = "SEARCH"; btnInteract.classList.remove("ready-glow"); }
 
   // Freeze countdown
@@ -1390,6 +1474,18 @@ function buildMinimapBase() {
 function drawMinimap() {
   if (!mmBase) return;
   mm.imageSmoothingEnabled = false;
+  mm.setTransform(1, 0, 0, 1, 0, 0);
+  if (isS3() && curFloor) {
+    // Stage III: crop and zoom to the floor you're on.
+    const f = level.floors[curFloor - 1];
+    const w = f.x1 - f.x0 + 3, h = f.y1 - f.y0 + 3;
+    const sc = Math.min(minimap.width / w, minimap.height / h);
+    mm.fillStyle = "#08050a";
+    mm.fillRect(0, 0, minimap.width, minimap.height);
+    mm.setTransform(sc, 0, 0, sc, (minimap.width - w * sc) / 2 - (f.x0 - 1) * sc, (minimap.height - h * sc) / 2 - (f.y0 - 1) * sc);
+    mm.save();
+    mm.beginPath(); mm.rect(f.x0 - 1, f.y0 - 1, w, h); mm.clip();
+  }
   mm.drawImage(mmBase, 0, 0);
   const t = performance.now() / 1000;
   // mirrors (faint)
@@ -1404,7 +1500,7 @@ function drawMinimap() {
   mm.fillStyle = Math.sin(t * 5) > 0 ? "#ffd86a" : "#c9a24d";
   for (const p of level.pages) if (!p.collected) mm.fillRect(p.tx - 0.5, p.ty - 0.5, 2, 2);
   // gate
-  mm.fillStyle = player.pagesFound >= 5 ? "#7dff9a" : "#d41c3b";
+  mm.fillStyle = gateOpen() ? "#7dff9a" : "#d41c3b";
   mm.fillRect(level.exitTile.tx - 1, level.exitTile.ty, 3, 1);
   // Countess only when she's hunting you or frozen
   if (countess.state === AI_STATE.HUNT || countess.frozen) {
@@ -1445,14 +1541,128 @@ function drawMinimap() {
     mm.fillStyle = Math.sin(t * 3) > 0 ? "#ffb050" : "#a86a20";
     mm.fillRect(level.merchant.tx - 0.5, level.merchant.ty - 0.5, 2, 2);
   }
+  // stairs (Stage III): gold = open, red = barred, blue = down
+  if (isS3()) {
+    for (const st of level.stairs) {
+      mm.fillStyle = st.dir === "down" ? "#7aa8ff" : st.open ? (Math.sin(t * 5) > 0 ? "#ffd86a" : "#c9a24d") : "#c41230";
+      mm.fillRect(st.tx, st.ty, 1, 1);
+    }
+    if (boss && !boss.dead) { mm.fillStyle = "#ff7a2a"; mm.fillRect(Math.floor(boss.x / TILE_SIZE) - 0.5, Math.floor(boss.y / TILE_SIZE) - 0.5, 2, 2); }
+  }
   // player
   mm.fillStyle = "#ffffff";
   mm.fillRect(Math.floor(player.x / TILE_SIZE) - 0.5, Math.floor(player.y / TILE_SIZE) - 0.5, 2, 2);
+  if (isS3() && curFloor) mm.restore();
+  mm.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// ---------------------------------------------------------------- Stage III: floors & stairs (v0.7)
+function floorWaypoints(n) { return level.waypoints.filter((w) => floorOfXY(w.x, w.y) === n); }
+function parkCountess() {
+  countess.x = -40 * TILE_SIZE; countess.y = -40 * TILE_SIZE;
+  countess.lastPos = { x: countess.x, y: countess.y };
+  if (countess.frozen) { countess.freezeTimer = 0; countess.state = AI_STATE.PATROL; }
+}
+function openStairsUp(n) {
+  const ups = level.stairs.filter((s) => s.floor === n && s.dir === "up" && !s.open);
+  for (const s of ups) {
+    s.open = true;
+    sound.playUnlock();
+    fx.push({ type: "spark", x: s.x, y: s.y, h: 1.4, n: 16, color: 0xffd86a });
+  }
+  if (ups.length) setTimeout(() => { if (mode === "PLAYING" || mode === "LORE") toast(`The gate on the stair grinds up — CLIMB to Floor ${ROMAN[n + 1]}.`, 3.2); }, 50);
+}
+function showFloorCard(f) {
+  const el = $("stage-card");
+  if (!el) return;
+  $("stage-card-num").textContent = `FLOOR ${f.numeral}`;
+  $("stage-card-title").textContent = f.name.toUpperCase();
+  $("stage-card-sub").textContent = f.n === 6 ? "The roof · the dawn stair is guarded" : `Break the Tower Seal · the stair up is barred until you do`;
+  el.classList.add("floor");
+  el.classList.remove("hidden");
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
+  clearTimeout(showStageCard._t);
+  showStageCard._t = setTimeout(() => el.classList.add("hidden"), 3200);
+}
+function enterFloor(n, opts = {}) {
+  const f = level.floors[n - 1];
+  if (!f) return;
+  const prev = curFloor;
+  curFloor = n;
+  renderer3d.setFloor(f, true);
+  countess.setWaypoints(floorWaypoints(n));
+  countess.aggro = f.aggro;
+  // She is somewhere below (or above) — she follows a few seconds later, faster the higher you are.
+  countessAway = opts.initial ? 8 : Math.max(4, 10 - n);
+  parkCountess();
+  // Only this floor's creatures are real to you now.
+  for (const m of monsters) if (!m.dead && floorOfXY(m.x, m.y) !== n) m.remove = true;
+  if (boss && boss.remove) { level.bossHp = boss.hp; boss = null; }
+  monsters = monsters.filter((m) => !m.remove);
+  projectiles = [];
+  spawnTimer = Math.max(spawnTimer, 3);
+  if (n === 6 && !level.bossDead && !boss) spawnBoss();
+  if (!opts.initial) {
+    showFloorCard(f);
+    if (prev && n > prev && n >= 4) toast(`She climbs faster now. (Floor ${f.numeral})`, 2.4);
+  }
+  buildMinimapBase();
+}
+function takeStair(s) {
+  if (!s || stairCd > 0) return false;
+  if (s.dir === "up" && !s.open) {
+    toast(`The stair is barred. Break this floor's Tower Seal (${level.pages[s.floor - 1].lore.title}).`, 3);
+    sound.playDeny();
+    return false;
+  }
+  const dest = level.stairs.find((q) => q.floor === s.to && q.to === s.floor);
+  if (!dest) return false;
+  stairCd = 0.9;
+  sound.playStairs();
+  player.x = dest.ax; player.y = dest.ay;
+  player.angle = Math.atan2(dest.ay - dest.y, dest.ax - dest.x);
+  renderer3d.snapCam = true;
+  lastRoomKey = null;
+  enterFloor(s.to);
+  updateHud();
+  return true;
+}
+function spawnBoss() {
+  const sp = level.bossSpawn;
+  boss = new Monster("gargoyle", sp.x, sp.y);
+  if (level.bossHp) boss.hp = level.bossHp;
+  monsters.push(boss);
+  fx.push({ type: "mist", x: sp.x, y: sp.y });
+  shake = Math.max(shake, 0.8);
+  sound.playScreech();
+  showBoon("curse", "THE TOWER GARGOYLE", "It unfolds from the battlements. Kill it to open the dawn stair.", 4);
+}
+function updateBossBar() {
+  const bb = $("boss-bar");
+  if (!bb) return;
+  const show = !!boss && !boss.dead && isS3() && curFloor === 6 && mode === "PLAYING";
+  bb.classList.toggle("hidden", !show);
+  if (show) $("boss-fill").style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
 }
 
 // ---------------------------------------------------------------- spawning
 function pickMonsterType() {
   const r = Math.random();
+  if (isS3()) {
+    const mix = {
+      1: [["ghoul", 0.5], ["bats", 0.25], ["prisoner", 0.25]],
+      2: [["prisoner", 0.45], ["ironmaiden", 0.25], ["maiden", 0.3]],
+      3: [["ghoul", 0.3], ["maiden", 0.3], ["bats", 0.15], ["prisoner", 0.25]],
+      4: [["wraith", 0.45], ["bats", 0.25], ["skeleton", 0.3]],
+      5: [["wraith", 0.4], ["maiden", 0.35], ["ironmaiden", 0.25]],
+      6: [["bats", 1]]
+    }[curFloor || 1];
+    let acc = 0;
+    for (const [k, p] of mix) { acc += p; if (r < acc) return k; }
+    return mix[0][0];
+  }
   if (level && level.stage === 2) {
     if (elapsed < 20) return "skeleton";
     if (elapsed < 60) return r < 0.6 ? "skeleton" : r < 0.85 ? "banshee" : "brute";
@@ -1466,11 +1676,14 @@ function pickMonsterType() {
 function spawnMonster(type = pickMonsterType(), at = null, quiet = false) {
   let sp = at;
   if (!sp) {
-    const far = level.spawns.filter((s) => {
+    const S3 = isS3();
+    const spawns = S3 ? level.spawns.filter((s) => floorOfXY(s.x, s.y) === curFloor) : level.spawns;
+    const minD = S3 ? 6 : 11;
+    const far = spawns.filter((s) => {
       const d = Math.hypot(s.x - player.x, s.y - player.y);
-      return d > TILE_SIZE * 11 && d < TILE_SIZE * 32 && !hasLineOfSight(level, s.x, s.y, player.x, player.y);
+      return d > TILE_SIZE * minD && d < TILE_SIZE * 32 && !hasLineOfSight(level, s.x, s.y, player.x, player.y);
     });
-    const pool = far.length ? far : level.spawns.filter((s) => Math.hypot(s.x - player.x, s.y - player.y) > TILE_SIZE * 8);
+    const pool = far.length ? far : spawns.filter((s) => Math.hypot(s.x - player.x, s.y - player.y) > TILE_SIZE * (S3 ? 5 : 8));
     if (!pool.length) return null;
     sp = pool[Math.floor(Math.random() * pool.length)];
   }
@@ -1480,7 +1693,8 @@ function spawnMonster(type = pickMonsterType(), at = null, quiet = false) {
   const d = Math.hypot(sp.x - player.x, sp.y - player.y);
   if (d < TILE_SIZE * 20) sound.playSpawn();
   const room = roomAt(level, Math.floor(sp.x / TILE_SIZE), Math.floor(sp.y / TILE_SIZE));
-  if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} ${type === "skeleton" ? "claws up out of the earth" : "rises"}${room ? ` in the ${room.name}` : ""}…`, 2.2);
+  const verb = type === "skeleton" ? (isS3() ? "steps out of the stacks" : "claws up out of the earth") : type === "wraith" ? "peels out of a portrait" : type === "prisoner" ? "drags his chain out of the dark" : type === "ironmaiden" ? "creaks open" : "rises";
+  if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} ${verb}${room ? ` in the ${room.name}` : ""}…`, 2.2);
   return m;
 }
 
@@ -1489,7 +1703,7 @@ function wellExitPoint() {
   const w = level.well;
   for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
     const tx = w.tx + dx, ty = w.ty + dy;
-    if (isPassableTile(level, tx, ty, player && player.pagesFound >= 5)) {
+    if (isPassableTile(level, tx, ty, gateOpen())) {
       return { x: (tx + 0.5) * TILE_SIZE, y: (ty + 0.5) * TILE_SIZE };
     }
   }
@@ -1581,8 +1795,8 @@ function updateWell(dt) {
 function updateSpawner(dt) {
   spawnTimer -= dt;
   if (spawnTimer > 0) return;
-  const alive = monsters.filter((m) => !m.dead && m.kind !== "dweller").length;
-  const cap = Math.min(10, 4 + Math.floor(elapsed / 40));
+  const alive = monsters.filter((m) => !m.dead && m.kind !== "dweller" && m.kind !== "gargoyle").length;
+  const cap = isS3() ? (curFloor === 6 ? 3 : Math.min(8, 3 + Math.floor(curFloor / 2) + Math.floor(elapsed / 50))) : Math.min(10, 4 + Math.floor(elapsed / 40));
   if (alive < cap) {
     spawnMonster();
     if (elapsed > 80 && Math.random() < 0.30 && alive + 1 < cap) spawnMonster();
@@ -1597,10 +1811,12 @@ const PUZZLE_REWARDS = {
   candles: { tier: "gilded", coins: 30, text: "Gilded mirror · 30 coins · Sanity restored" },
   crush: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" },
   crypt: { tier: "gilded", coins: 35, text: "Gilded mirror · 35 coins · Sanity restored" },
-  flood: { tier: "obsidian", coins: 45, text: "Obsidian mirror · 45 coins · Full armor" }
+  flood: { tier: "obsidian", coins: 45, text: "Obsidian mirror · 45 coins · Full armor" },
+  mirrors: { tier: "gilded", coins: 40, text: "Gilded mirror · 40 coins · Sanity restored" },
+  clock: { tier: "obsidian", coins: 50, text: "Obsidian mirror · 50 coins · Full armor" }
 };
 const kindOf = (lr) => lr.kind || lr.key;
-const isOrderPuzzle = (lr) => kindOf(lr) === "candles" || kindOf(lr) === "crypt";
+const isOrderPuzzle = (lr) => kindOf(lr) === "candles" || kindOf(lr) === "crypt" || kindOf(lr) === "mirrors";
 
 function inRoomRect(r, x, y) {
   const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
@@ -1635,7 +1851,9 @@ function showRiddle(lr) {
     candles: "Each candle has a carved sign on the floor before it. Light all six in the right order with your taper. A wrong flame snuffs them all.",
     crush: "Press the four glyph plates in the right order before the walls meet. A wrong plate resets them — and the walls lurch closer.",
     crypt: "Five coffins, each with a brass plaque. Tap REST at each to close its lid in the right order. A wrong lid wakes its sleeper — and every lid slides open again.",
-    flood: "Four bells hang in the water: silver, bronze, iron and bone. Ring them in the right order before the water closes over your head. A wrong bell makes the water surge."
+    flood: "Four bells hang in the water: silver, bronze, iron and bone. Ring them in the right order before the water closes over your head. A wrong bell makes the water surge.",
+    mirrors: "Four standing glasses, A to D. Tap TURN at a glass to swing it between its two angles. Tap OPEN at the brass lever to unshutter the lamp in the west wall. If the light finds her portrait instead of the sun, something steps out of the frame.",
+    clock: "Five books stand proud of the shelves, each marked with an hour. PULL them in the order of her day before the clock strikes thirteen. A wrong hour slams every book back — and the clock lurches forward."
   }[kindOf(lr)];
   lorePostscript.classList.remove("hidden");
   loreCloseBtn.textContent = lr.active ? "I UNDERSTAND" : "CLOSE";
@@ -1649,9 +1867,10 @@ function startPuzzle(lr) {
   lr.active = true;
   lr.progress = 0;
   lr.wallInset = 0;
-  for (const it of lr.items) { it.lit = false; it.pressed = false; it.ringT = 0; it.shake = 0; }
+  for (const it of lr.items) { it.lit = false; it.pressed = false; it.ringT = 0; it.shake = 0; if (lr.start && lr.start[it.sym]) it.rot = lr.start[it.sym]; }
+  lr.beamT = 0; lr.glareT = 0; shutterCd = 0; tickTimer = 0;
   setDoor(level, lr, false);
-  resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
+  resolveCircleWallCollision(level, player, player.radius, gateOpen());
   pathing.invalidate();
   sound.playDoorSlam();
   shake = Math.max(shake, 0.9);
@@ -1670,6 +1889,12 @@ function startPuzzle(lr) {
   } else if (k === "flood") {
     grindTimer = 0;
     toast("The door seals — black water starts pouring in!", 3);
+  } else if (k === "mirrors") {
+    toast("The door slams. Behind a shutter in the west wall, a lamp is burning…", 3);
+  } else if (k === "clock") {
+    grindTimer = 0;
+    sound.playStrike();
+    toast("The door seals — the great clock begins striking toward thirteen!", 3);
   } else {
     grindTimer = 0;
     toast("The door slams shut — the walls begin to move!", 3);
@@ -1693,6 +1918,25 @@ function failPuzzleStep(lr) {
     m.hp = m.maxHp = 22; // a frail one
     monsters.push(m);
     fx.push({ type: "mist", x: c.x, y: c.y });
+  } else if (k === "mirrors") {
+    // The light found her face: she answers, and the glasses swing back as they were.
+    for (const it of lr.items) if (lr.start[it.sym]) { it.rot = lr.start[it.sym]; it.flash = 0.6; }
+    lr.glareT = 1.6;
+    player.sanity = Math.max(0, player.sanity - 12);
+    sound.playScreech();
+    toast("The light finds her portrait — and something steps out of the frame! The glasses swing back.", 3.2);
+    const c = { x: (lr.room.x0 + lr.room.x1 + 1) / 2 * TILE_SIZE, y: (lr.room.y0 + 2) * TILE_SIZE };
+    const m = new Monster("wraith", c.x, c.y);
+    m.timer = 0.9;
+    m.hp = m.maxHp = 24;
+    monsters.push(m);
+    fx.push({ type: "mist", x: c.x, y: c.y });
+  } else if (k === "clock") {
+    for (const it of lr.items) { if (it.pressed) it.flash = 0.5; it.pressed = false; }
+    lr.wallInset = Math.min(0.99, lr.wallInset + 8 / lr.closeSecs);
+    sound.playStrike();
+    sound.playSnuff();
+    toast("Wrong hour! The books slam back — and the clock lurches forward.", 3);
   } else if (k === "flood") {
     for (const it of lr.items) it.pressed = false;
     lr.wallInset = Math.min(1, lr.wallInset + 0.12);
@@ -1771,6 +2015,46 @@ function ringBell(it) {
   else toast(`The ${PUZZLE_GLYPHS[it.sym]} bell tolls. (${lr.progress}/${lr.order.length})`, 1.8);
 }
 
+// ---- v0.7 Hall of Mirrors / Clock Library
+function turnMirror(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "mirrors" || lr.solved || it.sym === "shutter") return;
+  it.rot = it.rot === "/" ? "\\" : "/";
+  it.flash = 0.25;
+  sound.playMirrorTurn();
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.4, n: 6, color: 0xcfe6ff });
+}
+function openShutter() {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "mirrors" || lr.solved || shutterCd > 0) return null;
+  shutterCd = 1.6;
+  lr.beamT = 2.4;
+  const tr = traceBeam(lr);
+  if (tr.end === "sun") {
+    sound.playBeam(true);
+    solvePuzzle(lr);
+  } else if (tr.end === "portrait") {
+    sound.playBeam(false);
+    failPuzzleStep(lr);
+  } else {
+    sound.playBeam(false);
+    toast("The light dies on stone.", 2);
+  }
+  return tr.end;
+}
+function pullBook(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "clock" || it.pressed) return;
+  sound.playBookPull();
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, h: 1.2, n: 10, color: 0xc41230 }); failPuzzleStep(lr); return; }
+  it.pressed = true;
+  lr.progress += 1;
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.2, n: 12, color: 0xffd86a });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The book of the ${it.sym}th hour slides out. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+
 function solvePuzzle(lr) {
   lr.solved = true;
   lr.active = false;
@@ -1807,6 +2091,18 @@ function updatePuzzles(dt) {
     if (kindOf(lr) === "flood" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 0.5 * dt);
   }
   const lr = inPuzzle;
+  if (lr && kindOf(lr) === "clock") {
+    lr.wallInset = Math.min(1, lr.wallInset + dt / lr.closeSecs);
+    tickTimer -= dt;
+    if (tickTimer <= 0) { tickTimer = lr.wallInset > 0.75 ? 0.5 : 1; sound.playTick(); }
+    if (lr.wallInset >= 1) {
+      shake = 1.0;
+      sound.playStrike();
+      handleDeath("The clock struck thirteen. The Clock Library closed its pages on you.");
+    }
+    return;
+  }
+  if (lr && kindOf(lr) === "mirrors") { if (shutterCd > 0) shutterCd -= dt; return; }
   if (lr && kindOf(lr) === "flood") {
     // Water rises to drowning depth over closeSecs.
     lr.wallInset = Math.min(1, lr.wallInset + dt / lr.closeSecs);
@@ -1847,7 +2143,16 @@ function updatePuzzleHud() {
   puzzleHud.classList.remove("hidden");
   puzzleHud.className = `puzzle-hud ${lr.key}`;
   puzzleTitle.textContent = lr.name.toUpperCase();
-  if (kindOf(lr) === "crypt") {
+  if (kindOf(lr) === "mirrors") {
+    puzzleInfo.textContent = `Turn the four glasses · OPEN the lamp · wrong reflections: ${lr.failCount}`;
+    puzzleFill.style.width = lr.beamT > 0 ? "100%" : "0%";
+    puzzleHud.classList.remove("urgent");
+  } else if (kindOf(lr) === "clock") {
+    const secs = Math.max(0, (1 - lr.wallInset) * lr.closeSecs);
+    puzzleInfo.textContent = `Hours ${lr.progress} / ${lr.order.length} · thirteen strikes in ${Math.ceil(secs)}s`;
+    puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset) * 100}%`;
+    puzzleHud.classList.toggle("urgent", secs < 12);
+  } else if (kindOf(lr) === "crypt") {
     puzzleInfo.textContent = `Coffins at rest ${lr.progress} / ${lr.order.length}`;
     puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
     puzzleHud.classList.remove("urgent");
@@ -1888,7 +2193,7 @@ function damagePlayer(amount, fromX, fromY, reason) {
   const a = Math.atan2(player.y - fromY, player.x - fromX);
   player.x += Math.cos(a) * 10;
   player.y += Math.sin(a) * 10;
-  resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
+  resolveCircleWallCollision(level, player, player.radius, gateOpen());
   if (player.health <= 0) { player.health = 0; handleDeath(reason); }
 }
 
@@ -1901,7 +2206,11 @@ const DEATH_BY = {
   brute: "The Gravedigger's spade came down — and he began to dig.",
   banshee: "The banshee's wail was the last thing you heard.",
   slime: "The slime swallowed your lantern, then you.",
-  slimelet: "The slimes swarmed you in the dark."
+  slimelet: "The slimes swarmed you in the dark.",
+  prisoner: "A chained prisoner wrapped his chain around your throat.",
+  ironmaiden: "The Iron Maiden opened her doors — and closed them with you inside.",
+  wraith: "The portrait wraith stepped out of the dark and took your face for her frame.",
+  gargoyle: "The Tower Gargoyle carried you off the battlements."
 };
 
 // ---------------------------------------------------------------- update
@@ -1920,6 +2229,7 @@ function update(dt) {
   if (player.speedBoost > 0) player.speedBoost = Math.max(0, player.speedBoost - dt);
   if (player.darkCurse > 0) player.darkCurse = Math.max(0, player.darkCurse - dt);
   if (player.slowT > 0) player.slowT = Math.max(0, player.slowT - dt);
+  if (stairCd > 0) stairCd -= dt;
   if (boonTimer > 0) { boonTimer -= dt; if (boonTimer <= 0 && boonBanner) boonBanner.classList.add("hidden"); }
   shake = Math.max(0, shake - dt * 2.4);
   hurtFx = Math.max(0, hurtFx - dt * 2);
@@ -1940,7 +2250,7 @@ function update(dt) {
     player.x += nx * player.speed * clampedMag * slow * dt;
     player.y += ny * player.speed * clampedMag * slow * dt;
     if (player.attackAnim < 0.3) player.angle = Math.atan2(ny, nx);
-    resolveCircleWallCollision(level, player, player.radius, player.pagesFound >= 5);
+    resolveCircleWallCollision(level, player, player.radius, gateOpen());
     sound.playFootstep(clampedMag < 0.55);
   }
   if (attackHeld) tryAttack();
@@ -2039,7 +2349,18 @@ function update(dt) {
     }
     if (best) {
       const name = PUZZLE_GLYPHS[best.sym];
-      if (kindOf(inPuzzle) === "crypt") {
+      if (kindOf(inPuzzle) === "mirrors") {
+        if (best.sym === "shutter") {
+          nearbyContext = { type: "shutter", obj: best };
+          promptText = shutterCd > 0 ? "The lamp is burning…" : "Tap OPEN — unshutter the lamp";
+        } else {
+          nearbyContext = { type: "mirror", obj: best };
+          promptText = `Tap TURN — glass ${best.sym} (now ${best.rot === "/" ? "╱" : "╲"})`;
+        }
+      } else if (kindOf(inPuzzle) === "clock") {
+        nearbyContext = { type: "book", obj: best };
+        promptText = `Tap PULL — the book of hour ${best.sym} (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (kindOf(inPuzzle) === "crypt") {
         nearbyContext = { type: "coffin", obj: best };
         promptText = `Tap REST — the coffin marked ${best.sym} (${inPuzzle.progress}/${inPuzzle.order.length})`;
       } else if (kindOf(inPuzzle) === "flood") {
@@ -2051,6 +2372,19 @@ function update(dt) {
       } else {
         nearbyContext = { type: "plate", obj: best };
         promptText = `Tap PRESS — the ${name} plate (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      }
+    }
+  }
+  if (!nearbyContext && !player.hidden && isS3()) {
+    for (const st of level.stairs) {
+      if (st.floor !== curFloor) continue;
+      if (Math.hypot(st.x - player.x, st.y - player.y) < 58) {
+        nearbyContext = { type: "stair", obj: st };
+        const to = level.floors[st.to - 1];
+        promptText = st.dir === "down"
+          ? `Tap DESCEND — down to Floor ${to.numeral}: ${to.short}`
+          : st.open ? `Tap CLIMB — up to Floor ${to.numeral}: ${to.short}` : `Stair barred — break this floor's Tower Seal`;
+        break;
       }
     }
   }
@@ -2085,7 +2419,7 @@ function update(dt) {
   }
   if (!nearbyContext && !player.hidden && level.well && Math.hypot(level.well.x - player.x, level.well.y - player.y) < 52) {
     nearbyContext = { type: "well", obj: level.well };
-    const wn = level.well.fountain ? "black fountain" : "well";
+    const wn = level.well.fountain ? "black fountain" : level.well.cistern ? "cistern" : "well";
     promptText = player.coins >= 5 ? `Tap TOSS — Offer 5 coins to the ${wn}` : `The ${wn} wants an offering (5 coins)`;
   }
   if (!nearbyContext && !player.hidden) {
@@ -2100,8 +2434,9 @@ function update(dt) {
   }
   if (!nearbyContext && Math.hypot(level.exitTile.x - player.x, level.exitTile.y - player.y) < 60) {
     nearbyContext = { type: "exit", obj: level.exitTile };
-    promptText = player.pagesFound >= 5
-      ? (level.stage === 2 ? "Gatehouse Open — Tap ESCAPE!" : "Portcullis Unsealed — Tap ESCAPE!")
+    promptText = gateOpen()
+      ? (isS3() ? "The Dawn Stair Is Open — Tap ESCAPE!" : level.stage === 2 ? "Gatehouse Open — Tap ESCAPE!" : "Portcullis Unsealed — Tap ESCAPE!")
+      : isS3() ? (player.pagesFound < 5 ? `Dawn Stair Sealed (${player.pagesFound}/5 Tower Seals)` : "Dawn Stair Sealed — the Gargoyle still guards the roof")
       : (level.stage === 2 ? `Gatehouse Sealed (${player.pagesFound}/5 Grave Rubbings)` : `North Gate Sealed (${player.pagesFound}/5 Ledger Pages)`);
   }
   if (!nearbyContext && !player.hidden && level.merchant && Math.hypot(level.merchant.x - player.x, level.merchant.y - player.y) < 62) {
@@ -2113,7 +2448,7 @@ function update(dt) {
   if (promptText) { promptBanner.textContent = promptText; promptBanner.classList.remove("hidden"); }
   else promptBanner.classList.add("hidden");
 
-  if (player.pagesFound >= 5 && player.y < TILE_SIZE * 0.95 && Math.abs(player.x - level.exitTile.x) < TILE_SIZE * 0.7) {
+  if (gateOpen() && player.y < TILE_SIZE * 0.95 && Math.abs(player.x - level.exitTile.x) < TILE_SIZE * 0.7) {
     handleWin();
     return;
   }
@@ -2122,7 +2457,16 @@ function update(dt) {
   updatePuzzles(dt);
   if (mode !== "PLAYING") return;
   const seenPlayer = inPuzzle ? { ...player, hidden: true } : player;
-  countess.update(dt, level, seenPlayer, {
+  if (countessAway > 0) {
+    countessAway -= dt;
+    parkCountess();
+    if (countessAway <= 0) {
+      countessAway = 0;
+      countess.arriveFar(player);
+      sound.playAlert();
+      toast(curFloor === 1 && elapsed < 15 ? "Silk on stone, somewhere in the vaults… she is down here with you." : "Silk drags on the stair behind you… she has followed you.", 3);
+    }
+  } else countess.update(dt, level, seenPlayer, {
     onSpotted: () => sound.playAlert(),
     onCaught: () => {
       if (useMirror(true)) return;
@@ -2141,6 +2485,17 @@ function update(dt) {
       if (m.type.drainsOil) player.oil = Math.max(0, player.oil - 6);
     },
     onKilled: (m) => onMonsterKilled(m),
+    onBlink: (m, ox, oy) => {
+      fx.push({ type: "mist", x: ox, y: oy });
+      fx.push({ type: "mist", x: m.x, y: m.y });
+      sound.playScreech();
+      player.sanity = Math.max(0, player.sanity - 4);
+    },
+    onSwoop: (m) => {
+      sound.playScreech();
+      shake = Math.max(shake, 0.4);
+      fx.push({ type: "spark", x: m.x, y: m.y, h: 2.4, n: 10, color: 0x8a8a90 });
+    },
     onWail: (m) => {
       // Banshee: sanity drain + a slowing chill. Hiding muffles it.
       const d = Math.hypot(m.x - player.x, m.y - player.y);
@@ -2229,7 +2584,7 @@ function update(dt) {
   updateDrops(dt);
   if (!inPuzzle) {
     updateSpawner(dt);
-    updateWell(dt);
+    if (!isS3() || curFloor === 1) updateWell(dt);
   }
 
   // Well Dweller sanity aura
@@ -2257,7 +2612,7 @@ function update(dt) {
     if (d < 140) monsterDanger = Math.max(monsterDanger, 0.35 * (1 - d / 140));
   }
   danger = Math.max(danger, monsterDanger, (1 - player.health / player.maxHealth) * 0.4);
-  if (player.sanity <= 0) { handleDeath(level.stage === 2 ? "Your mind came apart in the graveyard fog." : "Your mind fractured inside the dark stones of Csejte."); return; }
+  if (player.sanity <= 0) { handleDeath(isS3() ? "Your mind came apart somewhere on the tower stairs." : level.stage === 2 ? "Your mind came apart in the graveyard fog." : "Your mind fractured inside the dark stones of Csejte."); return; }
 
   dangerVignette.style.opacity = (danger * 0.85).toFixed(2);
   const lowSanity = Math.max(0, (38 - player.sanity) / 38);
@@ -2267,6 +2622,7 @@ function update(dt) {
   mmTimer -= dt;
   if (mmTimer <= 0) { mmTimer = 0.2; drawMinimap(); }
   updateHud();
+  updateBossBar();
 }
 
 function draw() {
@@ -2355,7 +2711,8 @@ if (new URLSearchParams(location.search).has("qa")) {
     newRun: () => startNewRun(1),
     // ---- v0.6
     startStage(n = 2, carryCoins = null) {
-      if (n === 2) { stage2Unlocked = true; lsSet(LS_S2, true); }
+      if (n >= 2) { stage2Unlocked = true; lsSet(LS_S2, true); }
+      if (n === 3) { stage3Unlocked = true; lsSet(LS_S3, true); }
       startNewRun(n);
       if (carryCoins !== null) { player.coins = carryCoins; runStartCoins = carryCoins; }
       return level.stage;
@@ -2366,7 +2723,7 @@ if (new URLSearchParams(location.search).has("qa")) {
     get purse() { return loadPurse(); },
     set purse(v) { savePurse(v); },
     get stage2Unlocked() { return stage2Unlocked; },
-    resetProgress() { upgrades = { heart: 0, edge: 0, wick: 0, glass: 0 }; lsSet(LS_UP, upgrades); savePurse(0); stage2Unlocked = false; lsSet(LS_S2, false); refreshTitleStages(); },
+    resetProgress() { upgrades = { heart: 0, edge: 0, wick: 0, glass: 0 }; lsSet(LS_UP, upgrades); savePurse(0); stage2Unlocked = false; lsSet(LS_S2, false); stage3Unlocked = false; lsSet(LS_S3, false); refreshTitleStages(); },
     setCoins(n) { player.coins = n; if (hudCoinVal) hudCoinVal.textContent = String(n); },
     openShop: (ctx = "field") => openShop(ctx),
     closeShop: () => closeShop(),
@@ -2386,13 +2743,47 @@ if (new URLSearchParams(location.search).has("qa")) {
     },
     set waterLevel(v) { if (inPuzzle) inPuzzle.wallInset = v; },
     get boon() { return boonBanner.classList.contains("hidden") ? null : boonTitle.textContent; },
-    set wellTimer(v) { wellTimer = v; }
+    set wellTimer(v) { wellTimer = v; },
+    // ---- v0.7
+    get floor() { return curFloor; },
+    spawnHere() { const m = spawnMonster(); return m && m.id; },
+    kill(id) { const m = monsters.find((q) => q.id === id); if (!m || m.dead) return false; m.hp = 0; m._die(); onMonsterKilled(m); return true; },
+    floorOf(x, y) { return floorOfXY(x, y); },
+    get grade() { const u = renderer3d.postMat.uniforms; return [u.uGain.value.toArray(), u.uSat.value]; },
+    get stairs() { return level.stairs; },
+    get countessAway() { return countessAway; },
+    set countessAway(v) { countessAway = v; },
+    get boss() { return boss; },
+    get bossDead() { return !!level.bossDead; },
+    get stage3Unlocked() { return stage3Unlocked; },
+    gateOpen: () => gateOpen(),
+    takeStair(floor, dir) { const st = level.stairs.find((q) => q.floor === floor && q.dir === dir); stairCd = 0; return takeStair(st) ? curFloor : -1; },
+    // jump to a floor (QA): stands you at that floor's down-stair arrival (or the start for Floor I)
+    goFloor(n) {
+      const st = level.stairs.find((q) => q.floor === n && q.dir === "down");
+      if (st) { player.x = st.ax; player.y = st.ay; } else { player.x = level.playerSpawn.x; player.y = level.playerSpawn.y; }
+      renderer3d.snapCam = true;
+      enterFloor(n);
+      return curFloor;
+    },
+    openStairs(n) { openStairsUp(n); return level.stairs.filter((q) => q.floor === n && q.dir === "up").every((q) => q.open); },
+    turnMirror(sym) { const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym); if (it) turnMirror(it); return it ? it.rot : null; },
+    openShutter() { shutterCd = 0; return openShutter(); },
+    pullBook(sym) { const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym); if (it) pullBook(it); return inPuzzle ? inPuzzle.progress : 99; },
+    set clockLevel(v) { if (inPuzzle) inPuzzle.wallInset = v; },
+    traceBeam() { const lr = level.lockedRooms.find((q) => q.kind === "mirrors"); return lr ? traceBeam(lr) : null; },
+    enterStage3() { carryOver = carryOver || { next: 3, weapon: player.weapon, ammo: player.ammo, mirrors: { ...player.mirrors }, armor: player.armor, coins: player.coins, speedBoost: 0 }; enterStage2(); return level.stage; },
+    setQuality(q) { quality.set(q); return quality.label(); },
+    get quality() { return { setting: quality.setting, level: quality.level, label: quality.label(), fps: quality.fps }; },
+    cycleQuality() { quality.cycle(); return quality.label(); }
   };
 }
 
 let lastFrame = performance.now();
 function loop(now) {
-  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  const rawDt = (now - lastFrame) / 1000;
+  quality.sample(rawDt, mode === "PLAYING");
+  const dt = Math.min(0.05, rawDt);
   lastFrame = now;
   update(dt);
   draw();
@@ -2403,6 +2794,11 @@ requestAnimationFrame(loop);
 // ?qa&stage=2 — jump straight into the Graveyards (QA only).
 {
   const qs = new URLSearchParams(location.search);
+  if (qs.has("qa") && qs.get("stage") === "3") {
+    stage2Unlocked = true; stage3Unlocked = true;
+    lsSet(LS_S2, true); lsSet(LS_S3, true);
+    setTimeout(() => { pendingStage = 3; startNewRun(3); }, 50);
+  }
   if (qs.has("qa") && qs.get("stage") === "2") {
     stage2Unlocked = true;
     lsSet(LS_S2, true);

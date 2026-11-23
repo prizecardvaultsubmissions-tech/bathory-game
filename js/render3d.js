@@ -3,6 +3,9 @@ import { TILE_SIZE, roomAt, MIRROR_TIERS } from "./map.js";
 import { mergeGeometries } from "./vendor/BufferGeometryUtils.js";
 import { AI_STATE } from "./enemy.js";
 import { makeTextures, seeded } from "./textures.js";
+import { upgradeTextures, upgradeCharacterTextures } from "./textures_hd.js";
+import { buildStage3Props, buildStage3Rigs, updateStage3 } from "./render_stage3.js";
+import { QUALITY_PRESETS } from "./quality.js";
 import { buildInvestigator, buildCountess, buildWeapon, buildMonster } from "./characters.js";
 
 // 2D game-logic pixels -> 3D world units. One tile = 2 units.
@@ -129,7 +132,17 @@ const CAM_OFFSETS = {
   chapelyard: [0.0, 8.2, 7.2],
   crypt: [0.0, 11.0, 7.6],
   flood: [0.0, 11.0, 7.2],
-  doorway: [0.0, 7.4, -5.6] // looking south at the sealed chamber doors
+  doorway: [0.0, 7.4, -5.6], // looking south at the sealed chamber doors
+  // Stage III floors (indoor rooms: a tighter, steeper view; the tower top opens out)
+  cellar: [-1.4, 8.4, 6.6],
+  vaults: [1.4, 8.4, 6.6],
+  torture3: [1.6, 8.6, 6.6],
+  servants: [-1.4, 8.4, 6.8],
+  library: [0.0, 8.8, 6.4],
+  bedchamber: [-1.6, 8.6, 6.6],
+  battlements: [0.0, 9.2, 7.4],
+  mirrors: [0.0, 19.0, 8.6], // high, near top-down: every glass and the whole beam path on a phone
+  clock: [0.0, 17.5, 8.6]
 };
 
 // Procedural glyphs carved on candle bases and pressure plates (no fonts needed).
@@ -185,6 +198,10 @@ function glyphTexture(sym, color = "#ffd86a", bg = "#2a2018") {
     case "I": case "II":
       g.font = "bold 30px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(sym, 32, 34);
       break;
+    default:
+      // any other label (mirror letters, clock numerals): serif text sized to fit the disc
+      g.font = `bold ${sym.length <= 2 ? 30 : sym.length === 3 ? 24 : 19}px serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(sym, 32, 34);
+      break;
     case "silver": case "bronze": case "iron": case "bone": {
       const col = { silver: "#e8eef6", bronze: "#d08a48", iron: "#8a8a96", bone: "#efe2bc" }[sym];
       g.fillStyle = col;
@@ -215,6 +232,8 @@ function plaqueTexture(text) {
 }
 
 const PARTICLES = 320;
+const GORE = 160;
+const EMBERS = 200;
 
 export class Renderer3D {
   constructor(canvas) {
@@ -229,7 +248,7 @@ export class Renderer3D {
     this.fogColor = new THREE.Color(0x0a0610);
     this.scene.background = this.fogColor;
     this.scene.fog = new THREE.Fog(this.fogColor, 10, 30);
-    this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 40);
+    this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 48);
 
     this.rt = new THREE.WebGLRenderTarget(4, 4, {
       minFilter: THREE.NearestFilter,
@@ -247,12 +266,21 @@ export class Renderer3D {
         uIce: { value: 0 },
         uHurt: { value: 0 },
         uDark: { value: 0 },
-        uMoon: { value: 0 }
+        uMoon: { value: 0 },
+        uMoonP: { value: new THREE.Vector3(0.7, 0.75, 1.0) },
+        uBloom: { value: 1 },
+        uGrain: { value: 0.035 },
+        uCA: { value: 0 },
+        uGain: { value: new THREE.Vector3(1, 1, 1) },
+        uLift: { value: new THREE.Vector3(0, 0, 0) },
+        uSat: { value: 1 }
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt; uniform float uDark; uniform float uMoon;
+        uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uGlitch; uniform float uTime; uniform float uRedShift; uniform float uIce; uniform float uHurt; uniform float uDark; uniform float uMoon; uniform vec3 uMoonP;
+        uniform float uBloom; uniform float uGrain; uniform float uCA; uniform vec3 uGain; uniform vec3 uLift; uniform float uSat;
         varying vec2 vUv;
+        float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         ${BAYER}
         void main(){
           vec2 uv = vUv;
@@ -262,12 +290,31 @@ export class Renderer3D {
             uv.x += j * uGlitch * 0.035;
           }
           vec3 c = texture2D(tDiffuse, uv).rgb;
+          if (uCA > 0.0) {
+            // subtle lens fringe toward the screen edges
+            vec2 dq = (uv - 0.5) * dot(uv - 0.5, uv - 0.5) * 0.012 * uCA;
+            c.r = texture2D(tDiffuse, uv + dq).r;
+            c.b = texture2D(tDiffuse, uv - dq).b;
+          }
+          if (uBloom > 0.0) {
+            // "bloom-lite": two rings of 8 taps, bright-pass only, so flames, eyes and the lantern bleed light
+            vec3 acc = vec3(0.0);
+            vec2 px = 1.0 / uRes;
+            for (int i = 0; i < 8; i++) {
+              float a = float(i) * 0.785398 + 0.39;
+              vec2 o = vec2(cos(a), sin(a));
+              vec3 s1 = texture2D(tDiffuse, uv + o * px * 2.0).rgb;
+              vec3 s2 = texture2D(tDiffuse, uv + o * px * 5.0).rgb;
+              acc += max(s1 - 0.42, 0.0) * 0.6 + max(s2 - 0.42, 0.0) * 0.4;
+            }
+            c += acc * (0.16 * uBloom);
+          }
           if (uGlitch > 0.0) c.r = mix(c.r, texture2D(tDiffuse, uv + vec2(uGlitch * 0.006, 0.0)).r, 0.8);
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           if (uMoon > 0.0) {
             // A huge pale moon hangs "behind" the scene: it only shows through the darkest pixels (fog, void, shadow).
-            vec2 mp = vec2(0.7, 0.75);
-            vec2 d = (vUv - mp) * vec2(uRes.x / uRes.y, 1.0);
+            vec2 mp = uMoonP.xy;
+            vec2 d = (vUv - mp) * vec2(uRes.x / uRes.y, 1.0) / uMoonP.z;
             float r = length(d);
             float l0 = dot(c, vec3(0.3, 0.59, 0.11));
             float behind = 1.0 - smoothstep(0.4, 0.56, l0);
@@ -287,6 +334,11 @@ export class Renderer3D {
             c *= 1.0 - uDark * 0.62;
             c = mix(c, vec3(0.02, 0.03, 0.06), uDark * 0.45 * smoothstep(0.05, 0.55, length(q)));
           }
+          // colour grade (per stage / floor): gain, lift, saturation
+          c = c * uGain + uLift;
+          float lg = dot(c, vec3(0.3, 0.59, 0.11));
+          c = mix(vec3(lg), c, uSat);
+          if (uGrain > 0.0) c += (hash12(gl_FragCoord.xy + fract(uTime * 7.13) * 317.0) - 0.5) * uGrain;
           float b = bayer4(gl_FragCoord.xy) - 0.5;
           c = floor(c * 31.0 + b + 0.5) / 31.0;
           c *= 1.0 - dot(q, q) * 0.9;
@@ -299,7 +351,10 @@ export class Renderer3D {
     this.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
 
-    this.T = makeTextures();
+    this.T = upgradeCharacterTextures(upgradeTextures(makeTextures()));
+    this.q = QUALITY_PRESETS.med;
+    this.res = this.q.res;
+    this.decals = null;
     this.time = 0;
     this.lastNow = performance.now();
     this.built = false;
@@ -325,7 +380,7 @@ export class Renderer3D {
   resize() {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
-    const k = 240 / Math.min(w, h);
+    const k = (this.res || 240) / Math.min(w, h);
     const lw = Math.max(160, Math.round(w * k));
     const lh = Math.max(160, Math.round(h * k));
     this.lw = lw;
@@ -338,6 +393,30 @@ export class Renderer3D {
     this.camera.updateProjectionMatrix();
     this.baseSnap = new THREE.Vector2(lw * 0.5, lh * 0.5);
     SNAP.value.copy(this.baseSnap);
+  }
+
+  // Quality presets (low / med / high) from quality.js: resolution, shadows, light count, particles, post.
+  applyQuality(preset) {
+    if (!preset) return;
+    const prev = this.q;
+    this.q = preset;
+    if (this.res !== preset.res) { this.res = preset.res; this.resize(); }
+    const u = this.postMat.uniforms;
+    u.uBloom.value = preset.bloom;
+    u.uGrain.value = preset.grain;
+    u.uCA.value = preset.ca;
+    if (this.spot) {
+      this.spot.castShadow = !!preset.shadows;
+      if (this.spot.shadow.mapSize.x !== preset.shadowMap) {
+        this.spot.shadow.mapSize.set(preset.shadowMap, preset.shadowMap);
+        if (this.spot.shadow.map) { this.spot.shadow.map.dispose(); this.spot.shadow.map = null; }
+      }
+    }
+    this.renderer.shadowMap.enabled = !!preset.shadows;
+    if (this.flameLights) this.flameLights.forEach((f, i) => { f.light.visible = i < preset.lights; });
+    if (this.dust) this.dust.geometry.setDrawRange(0, Math.floor(this.dustCount * preset.dust));
+    if (this.embers) this.embers.geometry.setDrawRange(0, preset.embers);
+    if (prev && prev.shadows !== preset.shadows) this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
   }
 
   setLevel(level) {
@@ -380,9 +459,9 @@ export class Renderer3D {
     if (!id) { this.weaponMesh = null; return; }
     this.weaponMesh = buildWeapon(id, this.T, psx);
     const hand = new THREE.Group();
-    hand.position.set(0, -0.66, 0.02);
+    hand.position.set(0, -0.36, 0.02);
     hand.add(this.weaponMesh);
-    this.inv.arms[0].add(hand);
+    (this.inv.elbows ? this.inv.elbows[0] : this.inv.arms[0]).add(hand);
     this.weaponMesh = hand;
     this.weaponModel = hand.children[0];
   }
@@ -402,8 +481,48 @@ export class Renderer3D {
     return t;
   }
 
+  // Stage III: every floor gets its own masonry; the tower top has low crenellated parapets open to the sky.
+  _buildStage3Walls(level, wallTiles, isOpen, fallback) {
+    const T = this.T;
+    const groups = new Map();
+    for (const [tx, ty] of wallTiles) {
+      let room = null;
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        if (!isOpen(tx + dx, ty + dy)) continue;
+        room = roomAt(this.level || level, tx + dx, ty + dy) || room;
+        if (room) break;
+      }
+      const key = room ? (room.key === "battlements" ? "parapet" : room.wall || "stone") : "stone";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push([tx, ty]);
+    }
+    const m4 = new THREE.Matrix4();
+    for (const [key, tiles] of groups) {
+      const parapet = key === "parapet";
+      const tex = parapet ? (T.towerWall || T.stone) : (T[key] || T.stone);
+      const side = this._mat(`s3wall-${key}`, { map: tex }, true);
+      const top = this._mat(`s3top-${key}`, { map: T.stoneTop, color: parapet ? 0x9a9ab0 : 0x8a8078 }, true);
+      const h = parapet ? 1.25 : WALL_H;
+      const im = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, h, TILE), [side, side, top, top, side, side], tiles.length);
+      tiles.forEach(([tx, ty], i) => { const c = tileCenter(tx, ty); m4.makeTranslation(c.x, h / 2, c.z); im.setMatrixAt(i, m4); });
+      im.castShadow = true; im.receiveShadow = true;
+      this.scene.add(im);
+      if (parapet) {
+        // merlons on every other tile
+        const mer = tiles.filter(([tx, ty]) => (tx + ty) % 2 === 0);
+        const mm = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE * 0.8, 0.9, TILE * 0.8), [side, side, top, top, side, side], Math.max(1, mer.length));
+        mer.forEach(([tx, ty], i) => { const c = tileCenter(tx, ty); m4.makeTranslation(c.x, h + 0.45, c.z); mm.setMatrixAt(i, m4); });
+        mm.count = mer.length;
+        mm.castShadow = true;
+        this.scene.add(mm);
+      }
+    }
+    fallback.geometry.dispose();
+  }
+
   _build(level) {
     const T = this.T;
+    this.stairPlacements = [];
     const scene = this.scene;
     const rnd = seeded(1610);
     const B = new Batcher();
@@ -412,29 +531,49 @@ export class Renderer3D {
 
     // ---------- Lights ----------
     const S2 = level.stage === 2;
-    scene.add(S2 ? new THREE.HemisphereLight(0x8098c8, 0x1c2430, 2.7) : new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6));
+    const S3 = level.stage === 3;
+    this.glyph = glyphTexture;
+    this.hemi = S2 ? new THREE.HemisphereLight(0x8098c8, 0x1c2430, 2.7) : new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6);
+    scene.add(this.hemi);
     const moon = new THREE.DirectionalLight(S2 ? 0xb0c4f0 : 0x6c7fb0, S2 ? 1.5 : 0.55);
     moon.position.set(-10, 20, 6);
     scene.add(moon);
+    this.moon = moon;
+    // every flame in the world registers here; the nearest few get real point lights
+    this.flameSources = [];
+    const addFlameSrc = (x, y, z, base, dist, color = 0xff8a3a) => this.flameSources.push({ p: new THREE.Vector3(x, y, z), base, dist, color });
+    this._addFlameSrc = addFlameSrc;
 
     // ---------- Floors: base flagstone + per-wing surfaces ----------
     const fw = level.cols * TILE;
     const fh = level.rows * TILE;
-    const base = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), this._mat(S2 ? "floor2" : "floor", { map: this._texRepeat(S2 ? T.dirt : T.floor, level.cols, level.rows) }));
+    // Subdivide base & room planes and separate Y so PS1 vertex snapping never causes Z-fighting.
+    const base = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh, 16, 16), S3
+      ? this._mat("floor3-void", { color: 0x050407 }) // solid tower masonry between the floors reads as black
+      : this._mat(S2 ? "floor2" : "floor", { map: this._texRepeat(S2 ? T.dirt : T.floor, level.cols, level.rows) }));
     base.rotation.x = -Math.PI / 2;
-    base.position.set(fw / 2, 0, fh / 2);
+    base.position.set(fw / 2, S3 ? -0.08 : -0.02, fh / 2);
     base.receiveShadow = true;
     scene.add(base);
     for (const r of level.rooms) {
       if (r.floor === "floor") continue;
       const w = r.x1 - r.x0 + 1;
       const h = r.y1 - r.y0 + 1;
-      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood, grass: T.grass, dirt: T.dirt, bone: T.boneFloor, flag: T.flag }[r.floor];
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE), this._mat(`floor-${level.stage}-${r.key}`, { map: this._texRepeat(tex, w, h) }));
+      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood, grass: T.grass, dirt: T.dirt, bone: T.boneFloor, flag: T.flag }[r.floor] || T[r.floor] || T.floor;
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE, Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2))), this._mat(`floor-${level.stage}-${r.key}`, { map: this._texRepeat(tex, w, h) }));
       p.rotation.x = -Math.PI / 2;
       p.position.set((r.x0 + w / 2) * TILE, 0.005, (r.y0 + h / 2) * TILE);
       p.receiveShadow = true;
       scene.add(p);
+    }
+    if (S3) {
+      for (const [k, x0, y0, w, h, tx] of [["t1", 28, 45, 1, 1, T.tortureFloor], ["t2", 47, 45, 1, 1, T.servantFloor], ["ex", 8, 1, 3, 1, T.slate]]) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE), this._mat(`floor-3-${k}`, { map: this._texRepeat(tx || T.flag, w, h) }));
+        p.rotation.x = -Math.PI / 2;
+        p.position.set((x0 + w / 2) * TILE, 0.005, (y0 + h / 2) * TILE);
+        p.receiveShadow = true;
+        scene.add(p);
+      }
     }
 
     // ---------- Walls (instanced) ----------
@@ -467,7 +606,8 @@ export class Renderer3D {
     });
     walls.castShadow = true;
     walls.receiveShadow = true;
-    scene.add(walls);
+    if (S3) this._buildStage3Walls(level, wallTiles, isOpen, walls);
+    else scene.add(walls);
     if (S2) {
       // Iron fence panels along every wall run (two crossed alpha-cut planes per tile, instanced).
       const fenceMat = psx(new THREE.MeshLambertMaterial({ map: T.fence, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), { cutaway: true });
@@ -497,6 +637,7 @@ export class Renderer3D {
     const smallFlames = [];
     for (const [tx, ty] of wallTiles) {
       if (S2 || !isOpen(tx, ty + 1)) continue;
+      if (S3) { const rr = roomAt(level, tx, ty + 1); if (!rr || rr.key === "battlements" || rr.sealed) continue; }
       const c = tileCenter(tx, ty);
       const z = (ty + 1) * TILE;
       B.box(trimMat, TILE, 0.12, 0.08, c.x, 0.2, z + 0.04);
@@ -509,7 +650,9 @@ export class Renderer3D {
         B.add(new THREE.PlaneGeometry(1.15, 2.1), tapMat, c.x, 1.55, z + 0.03);
       } else if (h < 0.3) {
         B.box(ironMat, 0.18, 0.4, 0.3, c.x, 1.85, z + 0.15);
+        B.box(ironMat, 0.34, 0.06, 0.34, c.x, 2.07, z + 0.24);
         bigFlames.push(c.x, 2.22, z + 0.22);
+        addFlameSrc(c.x, 2.3, z + 0.5, 9, 7.5, 0xffa050);
       }
     }
 
@@ -524,6 +667,7 @@ export class Renderer3D {
         if (rnd() < (S2 ? 0.1 : 0.22)) {
           const c = tileCenter(tx, ty);
           const n = 2 + Math.floor(rnd() * 3);
+          addFlameSrc(c.x, 0.7, ty * TILE + 0.8, 3.2, 4.5, 0xffb060);
           for (let k = 0; k < n; k++) {
             const x = c.x + (rnd() - 0.5) * 1.4;
             const z = ty * TILE + 0.25 + rnd() * 0.35;
@@ -537,7 +681,7 @@ export class Renderer3D {
 
     // Rugs
     const rugMat = this._mat("rug", { map: T.rug });
-    for (const [x0, y0, w, h] of (S2 ? [] : [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]])) {
+    for (const [x0, y0, w, h] of (S2 ? [] : S3 ? [[44, 5, 8, 3], [24, 13, 4, 6], [45, 31, 3, 8]] : [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]])) {
       B.add(new THREE.PlaneGeometry(w * TILE * 0.9, h * TILE * 0.96), rugMat, (x0 + w / 2) * TILE, 0.015, (y0 + h / 2) * TILE, -Math.PI / 2);
     }
 
@@ -698,6 +842,10 @@ export class Renderer3D {
 
 
 
+    if (S3) {
+      const flames = { small: smallFlames, big: bigFlames, add: addFlameSrc };
+      buildStage3Props(this, level, B, { woodMat, ironMat, goldMat, stoneMat, waxMat, redCloth }, flames);
+    }
     const glowMatEarly = (color, opacity) => new THREE.SpriteMaterial({ map: T.glow, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
     this.glowMat = glowMatEarly;
 
@@ -819,6 +967,7 @@ export class Renderer3D {
 
     this._buildBreakables(level, woodMat, ironMat);
     this._buildChambers(level, wallSide, wallTop, woodMat, ironMat, goldMat, stoneMat);
+    if (S3) buildStage3Rigs(this, level, { woodMat, ironMat, goldMat, stoneMat });
 
     // ---------- Iron alcoves ----------
     const innerMat = this._mat("inner", { color: 0x120a0e });
@@ -868,13 +1017,17 @@ export class Renderer3D {
       bigFlames.push(c.x, 1.35, c.z, c.x - 0.18, 1.2, c.z + 0.1, c.x + 0.16, 1.22, c.z - 0.08);
     }
     this.brazierPos = level.braziers.map((b) => tileCenter(b.tx, b.ty));
-    this.brazierLights = [];
-    for (let i = 0; i < 4; i++) {
-      const light = new THREE.PointLight(0xff8a3a, 22, 11, 1.3);
+    for (const p of this.brazierPos) addFlameSrc(p.x, 1.8, p.z, 22, 11);
+    // 6 pooled point lights; the quality preset decides how many are live
+    this.flameLights = [];
+    for (let i = 0; i < 6; i++) {
+      const light = new THREE.PointLight(0xff8a3a, 0, 11, 1.3);
       light.position.set(-100, -100, -100);
+      light.visible = i < this.q.lights;
       scene.add(light);
-      this.brazierLights.push({ light, base: 22, seed: i * 2.7 });
+      this.flameLights.push({ light, base: 0, seed: i * 2.7, src: null });
     }
+    this.brazierLights = this.flameLights;
 
     // ---------- Cracked glass ----------
     const shardMat = this._mat("shard", { color: 0xa8d8ff, emissive: 0x24425a, side: THREE.DoubleSide });
@@ -1132,15 +1285,18 @@ export class Renderer3D {
     // ---------- Characters ----------
     this.inv = buildInvestigator(T, psx);
     scene.add(this.inv.root);
-    this.spot = new THREE.SpotLight(0xffd08a, 60, 16, 0.62, 0.45, 1.1);
-    this.spot.castShadow = true;
-    this.spot.shadow.mapSize.set(512, 512);
+    this.spot = new THREE.SpotLight(0xffd08a, 66, 16, 0.62, 0.75, 1.25);
+    this.spot.castShadow = !!this.q.shadows;
+    this.spot.shadow.mapSize.set(this.q.shadowMap, this.q.shadowMap);
     this.spot.shadow.camera.near = 0.3;
     this.spot.shadow.camera.far = 16;
     this.spot.shadow.bias = -0.002;
     scene.add(this.spot, this.spot.target);
     this.aura = new THREE.PointLight(0xffc27a, 4, 5, 1.2);
     scene.add(this.aura);
+    // soft camera-side fill so the player (and whatever is on top of them) never reads as a black blob
+    this.fill = new THREE.PointLight(0xa898c8, 3.2, 5.0, 1.6);
+    scene.add(this.fill);
 
     this.cnt = buildCountess(T, psx);
     scene.add(this.cnt.root);
@@ -1175,13 +1331,47 @@ export class Renderer3D {
     this.pCol = new Float32Array(PARTICLES * 3);
     pGeo.setAttribute("position", new THREE.BufferAttribute(this.pPos, 3));
     pGeo.setAttribute("color", new THREE.BufferAttribute(this.pCol, 3));
-    this.particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 0.14, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ map: T.glow, size: 0.24, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.particles.frustumCulled = false;
     scene.add(this.particles);
     this.pVel = new Float32Array(PARTICLES * 3);
     this.pLife = new Float32Array(PARTICLES);
     this.pGrav = new Float32Array(PARTICLES);
     this.pNext = 0;
+    // Gore: a second, normally-blended pool so blood reads dark red instead of glowing
+    const gGeo = new THREE.BufferGeometry();
+    this.gPos = new Float32Array(GORE * 3).fill(-50);
+    this.gCol = new Float32Array(GORE * 3);
+    gGeo.setAttribute("position", new THREE.BufferAttribute(this.gPos, 3));
+    gGeo.setAttribute("color", new THREE.BufferAttribute(this.gCol, 3));
+    this.gore = new THREE.Points(gGeo, new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: false, depthWrite: true }));
+    this.gore.frustumCulled = false;
+    scene.add(this.gore);
+    this.gVel = new Float32Array(GORE * 3);
+    this.gLife = new Float32Array(GORE);
+    this.gNext = 0;
+    // Blood decals on the floor: one instanced draw, oldest recycled, shrinking away after ~18 s
+    const splat = this._splatTexture();
+    const decalMat = new THREE.MeshLambertMaterial({ map: splat, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, color: 0xffffff });
+    psx(decalMat);
+    const dGeo = new THREE.PlaneGeometry(1, 1);
+    dGeo.rotateX(-Math.PI / 2);
+    this.decals = new THREE.InstancedMesh(dGeo, decalMat, 48);
+    this.decals.frustumCulled = false;
+    this.decals.count = 0;
+    this.decalData = [];
+    this.decalNext = 0;
+    scene.add(this.decals);
+    // Embers rising from the flames near the player
+    const eGeo = new THREE.BufferGeometry();
+    this.ePos = new Float32Array(EMBERS * 3).fill(-50);
+    eGeo.setAttribute("position", new THREE.BufferAttribute(this.ePos, 3));
+    this.eVel = new Float32Array(EMBERS * 3);
+    this.eLife = new Float32Array(EMBERS);
+    this.embers = new THREE.Points(eGeo, new THREE.PointsMaterial({ map: T.glow, color: 0xff9a40, size: 0.16, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.embers.frustumCulled = false;
+    this.embers.geometry.setDrawRange(0, this.q.embers);
+    scene.add(this.embers);
 
     this.slashes = [];
     for (let i = 0; i < 3; i++) {
@@ -1215,6 +1405,7 @@ export class Renderer3D {
     const dust = [];
     const S2d = level.stage === 2;
     for (let i = 0; i < (S2d ? 900 : 400); i++) dust.push(rnd() * fw, S2d ? rnd() * 1.1 : rnd() * 3.2, rnd() * fh);
+    this.dustCount = S2d ? 900 : 400;
     const dg = new THREE.BufferGeometry();
     dg.setAttribute("position", new THREE.Float32BufferAttribute(dust, 3));
     this.dust = new THREE.Points(dg, S2d
@@ -1222,6 +1413,17 @@ export class Renderer3D {
       : new THREE.PointsMaterial({ color: 0xd8c8b0, size: 0.06, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.dustMist = S2d;
     scene.add(this.dust);
+    this.dust.geometry.setDrawRange(0, Math.floor(this.dustCount * this.q.dust));
+    // Low creeping floor mist for the indoor stages (one cheap additive draw)
+    this.floorMist = null;
+    if (!S2d) {
+      const mist = [];
+      for (let i = 0; i < 160; i++) mist.push(rnd() * fw, 0.15 + rnd() * 0.25, rnd() * fh);
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute("position", new THREE.Float32BufferAttribute(mist, 3));
+      this.floorMist = new THREE.Points(mg, new THREE.PointsMaterial({ map: T.glow, color: 0x8a6a8a, size: 2.2, transparent: true, opacity: 0.05, depthWrite: false, blending: THREE.AdditiveBlending }));
+      scene.add(this.floorMist);
+    }
 
     // ---------- Crows (Stage II): flapping silhouettes circling over the yard ----------
     this.crows = [];
@@ -1266,13 +1468,115 @@ export class Renderer3D {
     }
   }
 
+  // Per-stage (and per-floor) colour grade. Values are post-gamma multipliers / offsets.
+  setGrade(gain, lift, sat, snap = false) {
+    this.gradeTarget = { gain: new THREE.Vector3(...gain), lift: new THREE.Vector3(...lift), sat };
+    if (snap) {
+      const u = this.postMat.uniforms;
+      u.uGain.value.copy(this.gradeTarget.gain); u.uLift.value.copy(this.gradeTarget.lift); u.uSat.value = sat;
+    }
+  }
+
+  // Stage III: each floor of the tower has its own ambient colour, fog and grade.
+  setFloor(f, snap = false) {
+    if (!f) return;
+    this.floorDef = f;
+    if (this.hemi) {
+      this.hemi.color.setHex(f.hemi[0]);
+      this.hemi.groundColor.setHex(f.hemi[1]);
+      this.hemi.intensity = f.hemi[2];
+    }
+    if (this.moon) {
+      this.moon.color.setHex(f.open ? 0xb0c4f0 : 0x6c7fb0);
+      this.moon.intensity = f.open ? 1.4 : 0.3;
+    }
+    if (this.scene.fog) { this.scene.fog.near = f.open ? 10 : 8.5; this.scene.fog.far = f.open ? 30 : 26; }
+    this.setGrade(f.grade[0], f.grade[1], f.grade[2], snap);
+    this.gradeStage = this.stage;
+  }
+  _grade(witching) {
+    if (!this.gradeTarget || this.gradeStage !== this.stage) {
+      this.gradeStage = this.stage;
+      if (this.stage === 2) this.setGrade([0.95, 1.0, 1.08], [0.0, 0.006, 0.02], 0.9, true);
+      else if (this.stage === 1) this.setGrade([1.07, 0.98, 0.9], [0.012, 0.0, 0.01], 1.06, true);
+      else if (this.stage === 3) { const f = this.floorDef || { grade: [[1.1, 0.96, 0.84], [0.014, 0.004, 0], 1.0] }; this.setGrade(f.grade[0], f.grade[1], f.grade[2], true); }
+    }
+    const g = this.gradeTarget;
+    const u = this.postMat.uniforms;
+    const k = Math.min(1, (this.lastDt || 0.016) * 2.5);
+    u.uGain.value.lerp(witching ? new THREE.Vector3(g.gain.x * 1.08, g.gain.y * 0.9, g.gain.z * 0.9) : g.gain, k);
+    u.uLift.value.lerp(g.lift, k);
+    u.uSat.value += (g.sat - u.uSat.value) * k;
+  }
+
+  _emitGore(x, y, z, n, color = 0x8a0614) {
+    const c = new THREE.Color(color);
+    for (let k = 0; k < n; k++) {
+      const i = this.gNext;
+      this.gNext = (this.gNext + 1) % GORE;
+      this.gPos[i * 3] = x; this.gPos[i * 3 + 1] = y; this.gPos[i * 3 + 2] = z;
+      const a = Math.random() * Math.PI * 2, sp = 2.6 * (0.3 + Math.random() * 0.7);
+      this.gVel[i * 3] = Math.cos(a) * sp; this.gVel[i * 3 + 1] = 2 * (0.4 + Math.random()); this.gVel[i * 3 + 2] = Math.sin(a) * sp;
+      this.gLife[i] = 0.5 + Math.random() * 0.5;
+      const v = 0.7 + Math.random() * 0.5;
+      this.gCol[i * 3] = c.r * v; this.gCol[i * 3 + 1] = c.g * v; this.gCol[i * 3 + 2] = c.b * v;
+    }
+  }
+
+  _splatTexture() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const g = c.getContext("2d");
+    const r = seeded(4242);
+    g.fillStyle = "rgba(110,4,16,0.9)";
+    g.beginPath(); g.arc(16, 16, 7, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 14; i++) {
+      const a = r() * Math.PI * 2, d = 6 + r() * 9, s = 1 + r() * 2.6;
+      g.fillStyle = `rgba(${90 + r() * 40 | 0},4,14,${0.6 + r() * 0.35})`;
+      g.beginPath(); g.arc(16 + Math.cos(a) * d, 16 + Math.sin(a) * d, s, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = "rgba(60,0,8,0.6)";
+    g.beginPath(); g.arc(15, 17, 4, 0, Math.PI * 2); g.fill();
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  _addDecal(x, z, size) {
+    if (!this.decals) return;
+    const max = Math.min(48, this.q.decals || 24);
+    const i = this.decalNext % max;
+    this.decalNext = (i + 1) % max;
+    this.decalData[i] = { x, z, size, rot: Math.random() * Math.PI * 2, age: 0, y: 0.02 + (i % 8) * 0.002 };
+    this.decals.count = Math.max(this.decals.count, i + 1);
+  }
+
+  _updateDecals(dt) {
+    if (!this.decals || !this.decals.count) return;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < this.decals.count; i++) {
+      const d = this.decalData[i];
+      if (!d) continue;
+      d.age += dt;
+      const grow = Math.min(1, d.age * 6);
+      const fade = d.age > 18 ? Math.max(0.001, 1 - (d.age - 18) / 4) : 1;
+      q.setFromAxisAngle(up, d.rot);
+      sc.set(d.size * grow * fade, 1, d.size * grow * fade);
+      pos.set(d.x, d.y, d.z);
+      m.compose(pos, q, sc);
+      this.decals.setMatrixAt(i, m);
+    }
+    this.decals.instanceMatrix.needsUpdate = true;
+  }
+
   _consumeFx(list) {
     for (const f of list) {
       const x = f.x * S, z = f.y * S;
       if (f.type === "spark") this._emit(x, f.h ?? 1.1, z, f.n ?? 14, f.color ?? 0xffd27a, 4, 2.5, 8, 0.45);
-      else if (f.type === "blood") this._emit(x, 0.9, z, f.n ?? 16, 0x9a0a1c, 2.5, 2, 9, 0.7);
+      else if (f.type === "blood") { this._emit(x, 0.9, z, Math.ceil((f.n ?? 16) * 0.4), 0xff3040, 2.5, 2, 9, 0.35); this._emitGore(x, 0.9, z, f.n ?? 16); this._addDecal(x, z, 0.7 + Math.random() * 0.6); }
       else if (f.type === "mist") this._emit(x, 0.3, z, 26, 0x6a1030, 1.4, 1.4, -0.5, 1.2);
-      else if (f.type === "dissolve") this._emit(x, 0.8, z, 34, f.color ?? 0x8a0a2a, 1.8, 1.6, -1.5, 1.3);
+      else if (f.type === "dissolve") { this._emit(x, 0.8, z, 34, f.color ?? 0x8a0a2a, 1.8, 1.6, -1.5, 1.3); this._addDecal(x, z, 1.4 + Math.random() * 0.5); }
       else if (f.type === "burn") this._emit(x, 1.0, z, 2, 0xff8a2a, 0.6, 1.8, -2, 0.4);
       else if (f.type === "pickup") this._emit(x, 1.0, z, 18, f.color ?? 0xe7c873, 1.6, 2.4, 2, 0.8);
       else if (f.type === "heal") this._emit(x, 0.5, z, 2, 0xff6a6a, 0.4, 1.6, -1, 0.6);
@@ -1288,8 +1592,9 @@ export class Renderer3D {
         }
       }
       else if (f.type === "slime") {
-        this._emit(x, 0.4, z, 26, 0xb0101e, 2.6, 2.6, 9, 0.7);
+        this._emitGore(x, 0.4, z, 26, 0xb0101e);
         this._emit(x, 0.4, z, 10, 0x6aff5a, 1.6, 2.0, 7, 0.6);
+        this._addDecal(x, z, 1.2);
       }
       else if (f.type === "shatter") {
         this._emit(x, 1.8, z, 60, f.color ?? 0xdff0ff, 6, 3.5, 7, 1.0);
@@ -1325,6 +1630,45 @@ export class Renderer3D {
     }
     this.particles.geometry.attributes.position.needsUpdate = true;
     this.particles.geometry.attributes.color.needsUpdate = true;
+    for (let i = 0; i < GORE; i++) {
+      if (this.gLife[i] <= 0) continue;
+      this.gLife[i] -= dt;
+      if (this.gLife[i] <= 0) { this.gPos[i * 3 + 1] = -50; continue; }
+      this.gVel[i * 3 + 1] -= 10 * dt;
+      this.gPos[i * 3] += this.gVel[i * 3] * dt;
+      const ny = this.gPos[i * 3 + 1] + this.gVel[i * 3 + 1] * dt;
+      if (ny <= 0.03) { this.gVel[i * 3] *= 0.2; this.gVel[i * 3 + 2] *= 0.2; this.gVel[i * 3 + 1] = 0; }
+      this.gPos[i * 3 + 1] = Math.max(0.03, ny);
+      this.gPos[i * 3 + 2] += this.gVel[i * 3 + 2] * dt;
+    }
+    this.gore.geometry.attributes.position.needsUpdate = true;
+    this.gore.geometry.attributes.color.needsUpdate = true;
+    this._updateDecals(dt);
+    // embers: rise, drift, die; respawn at one of the lit flames near the player
+    const srcs = this.flameLights ? this.flameLights.filter((f) => f.src && f.light.visible) : [];
+    const nE = this.q.embers;
+    for (let i = 0; i < nE; i++) {
+      this.eLife[i] -= dt;
+      if (this.eLife[i] <= 0) {
+        if (!srcs.length) { this.ePos[i * 3 + 1] = -50; this.eLife[i] = 0.5; continue; }
+        const s = srcs[i % srcs.length].src;
+        const big = s.base >= 9;
+        this.ePos[i * 3] = s.p.x + (Math.random() - 0.5) * (big ? 0.6 : 0.4);
+        this.ePos[i * 3 + 1] = s.p.y - (big ? 0.5 : 0.1);
+        this.ePos[i * 3 + 2] = s.p.z + (Math.random() - 0.5) * (big ? 0.6 : 0.4);
+        this.eVel[i * 3] = (Math.random() - 0.5) * 0.3;
+        this.eVel[i * 3 + 1] = 0.5 + Math.random() * 0.9;
+        this.eVel[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+        this.eLife[i] = (big ? 1.2 : 0.6) + Math.random() * 1.4;
+        continue;
+      }
+      this.eVel[i * 3] += Math.sin(this.time * 3 + i) * dt * 0.6;
+      this.ePos[i * 3] += this.eVel[i * 3] * dt;
+      this.ePos[i * 3 + 1] += this.eVel[i * 3 + 1] * dt;
+      this.ePos[i * 3 + 2] += this.eVel[i * 3 + 2] * dt;
+    }
+    this.embers.geometry.attributes.position.needsUpdate = true;
+    this.embers.material.size = 0.13 + Math.sin(this.time * 13) * 0.03;
     for (const s of this.slashes) {
       if (s.life <= 0) { s.g.visible = false; continue; }
       s.life -= dt * 5;
@@ -1345,10 +1689,24 @@ export class Renderer3D {
       rig.legs[0].rotation.x = swing;
       rig.legs[1].rotation.x = -swing;
     }
+    if (rig.knees) {
+      // knees bend on the recovering (back-swinging) leg only
+      rig.knees[0].rotation.x = Math.max(0, Math.sin(phase + 1.3)) * 0.9 * amount;
+      rig.knees[1].rotation.x = Math.max(0, Math.sin(phase + 1.3 + Math.PI)) * 0.9 * amount;
+    }
     if (countess) {
       rig.skirt.rotation.z = Math.sin(phase) * 0.05 * amount;
       rig.skirt.rotation.x = Math.sin(phase * 0.5) * 0.03;
+      if (rig.cape) rig.cape.rotation.x = 0.08 + amount * 0.22 + Math.sin(phase * 0.9 + this.time * 1.3) * 0.06;
     }
+    if (rig.coatTails) {
+      const flap = 0.05 + amount * 0.25;
+      rig.coatTails[0].rotation.x = flap + Math.sin(phase) * 0.18 * amount;
+      rig.coatTails[1].rotation.x = flap - Math.sin(phase) * 0.18 * amount;
+    }
+    // idle breathing blends out as the walk takes over
+    const breath = Math.sin((this.time || 0) * 2.1) * 0.012 * (1 - amount);
+    if (rig.torso && rig.torso !== rig.body) rig.torso.scale.set(1 + breath, 1 + breath * 0.6, 1 + breath);
     rig.body.position.y = Math.abs(Math.sin(phase)) * 0.05 * amount;
   }
 
@@ -1362,11 +1720,12 @@ export class Renderer3D {
         rig.walk = Math.random() * 6;
         rig.prev = new THREE.Vector2(m.x * S, m.y * S);
         rig.eyes = [];
-        for (const sx of [-0.07, 0.07]) {
+        const es = rig.eyeScale || 0.16;
+        for (const sx of [-es * 0.45, es * 0.45]) {
           const e = new THREE.Sprite(this.glowMat(rig.eyeColor, 0.95));
           e.position.set(sx, rig.eyeY, rig.eyeZ);
-          e.scale.set(0.16, 0.16, 1);
-          rig.body.add(e);
+          e.scale.set(es, es, 1);
+          (rig.eyeParent || rig.body).add(e);
           rig.eyes.push(e);
         }
         const bar = new THREE.Group();
@@ -1431,23 +1790,31 @@ export class Renderer3D {
       // per-type animation
       const windup = m.state === "WINDUP";
       const hurt = m.hurt > 0;
-      if (m.kind === "ghoul") {
+      if (m.kind === "ghoul" || m.kind === "prisoner") {
         this._animateWalk(rig, rig.walk, Math.min(1, speed / 1.5));
         const reach = windup ? -2.2 : hurt ? 0.6 : -0.9 + Math.sin(rig.walk) * 0.3;
         rig.arms[0].rotation.x = reach;
         rig.arms[1].rotation.x = windup ? -2.2 : -0.9 - Math.sin(rig.walk) * 0.3;
+        if (rig.elbows) { rig.elbows[0].rotation.x = windup ? -0.1 : -0.35 - Math.sin(t * 3 + m.id) * 0.15; rig.elbows[1].rotation.x = windup ? -0.1 : -0.35 + Math.sin(t * 3 + m.id) * 0.15; }
         rig.torso.rotation.x = hurt ? 0.05 : windup ? 0.7 : 0.45 + Math.sin(t * 2 + m.id) * 0.05;
+        if (rig.head) rig.head.rotation.z = Math.sin(t * 1.3 + m.id) * 0.2;
+        if (rig.jaw) rig.jaw.rotation.x = windup ? 0.6 : Math.max(0, Math.sin(t * 4 + m.id)) * 0.25;
+        if (rig.chain) rig.chain.forEach((l, i) => { l.rotation.x = 0.9 + (i ? -0.15 : 0) + Math.sin(rig.walk * 1.2 - i * 0.6) * 0.18; l.rotation.z = Math.sin(rig.walk * 0.6 - i * 0.5) * 0.12; });
       } else if (m.kind === "skeleton") {
         this._animateWalk(rig, rig.walk * 1.2, Math.min(1, speed / 1.2));
         rig.arms[0].rotation.x = windup ? -2.4 : -0.5 + Math.sin(rig.walk * 1.2) * 0.5;
         rig.arms[1].rotation.x = windup ? -2.0 : -0.5 - Math.sin(rig.walk * 1.2) * 0.5;
         rig.torso.rotation.x = hurt ? -0.2 : windup ? 0.5 : 0.18;
         rig.torso.rotation.z = Math.sin(t * 6 + m.id) * 0.04; // bones rattle
+        if (rig.jaw) rig.jaw.rotation.x = Math.max(0, Math.sin(t * 9 + m.id)) * (windup ? 0.6 : 0.3); // chattering
+        if (rig.head) rig.head.rotation.y = Math.sin(t * 0.9 + m.id) * 0.35;
       } else if (m.kind === "brute") {
         this._animateWalk(rig, rig.walk * 0.7, Math.min(1, speed / 1.0));
         rig.arms[0].rotation.x = windup ? -1.6 : Math.sin(rig.walk * 0.7) * 0.3;
         rig.arms[1].rotation.x = windup ? -3.0 : -0.4 - Math.sin(rig.walk * 0.7) * 0.25;
         rig.torso.rotation.x = hurt ? 0.0 : windup ? -0.2 : 0.3 + Math.sin(t * 1.5 + m.id) * 0.04;
+        if (rig.elbows) rig.elbows[1].rotation.x = windup ? -0.9 : -0.2;
+        if (rig.head) rig.head.rotation.z = Math.sin(t * 0.8 + m.id) * 0.12;
       } else if (m.kind === "banshee") {
         const wail = m.wailing > 0 ? 1 : 0;
         rig.float.position.y = 0.6 + Math.sin(t * 2.2 + m.id) * 0.12 + wail * 0.35;
@@ -1458,6 +1825,42 @@ export class Renderer3D {
         rig.arms[0].rotation.x = windup ? -1.6 : 0;
         rig.arms[1].rotation.x = windup ? -1.6 : 0;
         rig.jaw.scale.y = wail ? 2.6 + Math.sin(t * 30) * 0.4 : 1;
+      } else if (m.kind === "wraith") {
+        rig.float.position.y = 0.5 + Math.sin(t * 1.8 + m.id) * 0.1;
+        rig.float.rotation.x = windup ? -0.35 : 0.1;
+        rig.tatters.forEach((tp, i) => { tp.rotation.x = Math.sin(t * 4 + i * 1.1) * 0.3 + 0.25; });
+        rig.arms[0].rotation.x = windup ? -1.8 : -0.4 + Math.sin(t * 2 + m.id) * 0.2;
+        rig.arms[1].rotation.x = windup ? -1.8 : -0.4 - Math.sin(t * 2 + m.id) * 0.2;
+        rig.frame.rotation.z = Math.sin(t * 1.1 + m.id) * 0.06;
+        rig.head.rotation.z = Math.sin(t * 0.7 + m.id) * 0.25 + (hurt ? 0.4 : 0);
+        // painted figures blink in and out when they teleport
+        const fl = m.blinkFx > 0 ? (Math.sin(t * 60) > 0 ? 0.2 : 1) : 1;
+        rig.root.scale.multiplyScalar(fl);
+      } else if (m.kind === "ironmaiden") {
+        const amt = Math.min(1, speed / 0.9);
+        rig.legs[0].rotation.x = Math.sin(rig.walk * 1.4) * 0.45 * amt;
+        rig.legs[1].rotation.x = -Math.sin(rig.walk * 1.4) * 0.45 * amt;
+        rig.shell.rotation.z = Math.sin(rig.walk * 1.4) * 0.09 * amt;   // heavy waddle
+        rig.shell.rotation.x = windup ? -0.15 : hurt ? 0.12 : 0.04;
+        rig.body.position.y = Math.abs(Math.sin(rig.walk * 1.4)) * 0.06 * amt;
+        const open = windup ? 1.25 : m.state === "ATTACK" ? 0.9 : 0.04 + Math.max(0, Math.sin(t * 0.7 + m.id) - 0.92) * 3;
+        rig.doorOpen = (rig.doorOpen || 0) + (open - (rig.doorOpen || 0)) * Math.min(1, dt * 8);
+        rig.doors[0].rotation.y = -rig.doorOpen;
+        rig.doors[1].rotation.y = rig.doorOpen;
+      } else if (m.kind === "gargoyle") {
+        const amt = Math.min(1, speed / 1.4);
+        const swoop = m.swooping > 0;
+        this._animateWalk(rig, rig.walk * 0.6, swoop ? 0 : amt);
+        rig.wings.forEach((w, i) => {
+          const s = i ? -1 : 1;
+          const beat = swoop ? Math.sin(t * 14) * 0.7 : windup ? -0.9 : Math.sin(t * 1.6 + m.id) * 0.18 - 0.25;
+          w.rotation.z = s * beat; w.rotation.y = s * (swoop ? 0.2 : 0.5);
+        });
+        rig.torso.rotation.x = swoop ? 0.9 : windup ? -0.25 : 0.35 + Math.sin(t * 1.2) * 0.04;
+        rig.arms[0].rotation.x = windup ? -2.4 : swoop ? -1.4 : -0.3 + Math.sin(rig.walk * 0.6) * 0.3;
+        rig.arms[1].rotation.x = windup ? -2.4 : swoop ? -1.4 : -0.3 - Math.sin(rig.walk * 0.6) * 0.3;
+        rig.jaw.rotation.x = windup || swoop ? 0.55 : Math.max(0, Math.sin(t * 1.4)) * 0.15;
+        rig.body.position.y += swoop ? 0.9 : 0;
       } else if (m.kind === "maiden") {
         rig.limbs.forEach((l, i) => { l.rotation.x = Math.sin(rig.walk * 1.6 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.6; });
         rig.body.position.y = windup ? 0.25 : Math.abs(Math.sin(rig.walk * 1.6)) * 0.06;
@@ -1507,6 +1910,7 @@ export class Renderer3D {
     const dt = Math.min(0.05, (now - this.lastNow) / 1000);
     this.lastNow = now;
     this.time += dt;
+    this.lastDt = dt;
     const t = this.time;
     const { player, countess, mode, flareFlash = 0, deathEcho, witching, monsters = [], projectiles = [], drops = [], fx = [], shake = 0, hurt = 0, weapon, speedBoost = 0, darkCurse = 0 } = state;
     const level = this.level;
@@ -1519,6 +1923,7 @@ export class Renderer3D {
     this._updateWell(level, t, fx);
     this._syncBreakables(level, dt);
     this._updateChambers(level, dt, t);
+    updateStage3(this, level, dt, t);
     if (player && speedBoost > 0 && mode === "PLAYING") this._speedTrail(player, dt, t);
 
     this.bigFlames.material.size = 0.8 + Math.sin(t * 17) * 0.06;
@@ -1543,6 +1948,11 @@ export class Renderer3D {
       }
     }
     dp.needsUpdate = true;
+    if (this.floorMist) {
+      this.floorMist.material.opacity = 0.045 + Math.sin(t * 0.3) * 0.015;
+      this.floorMist.position.x = Math.sin(t * 0.07) * 1.5;
+      this.floorMist.position.z = Math.cos(t * 0.05) * 1.2;
+    }
     this._updateGraveyard(level, state.player, dt, t, mode, state.puzzle);
 
     if (level) {
@@ -1563,7 +1973,7 @@ export class Renderer3D {
     }
 
     const pagesFound = player ? player.pagesFound : 0;
-    const open = pagesFound >= 5;
+    const open = pagesFound >= 5 && !(level && level.stage === 3 && !level.bossDead);
     this.seals.forEach((m, i) => m.color.setHex(i < pagesFound ? 0x3a2a10 : 0xc41230));
     this.bars.position.y += ((open ? WALL_H - 0.4 : 0) - this.bars.position.y) * Math.min(1, dt * 2);
     this.gateLight.color.setHex(open ? 0xe7c873 : 0xc41230);
@@ -1598,12 +2008,16 @@ export class Renderer3D {
       const amt = Math.min(1, speed / 2.5);
       this._animateWalk(inv, this.playerWalk, amt);
       inv.arms[1].rotation.x = player.hidden ? -0.3 : -1.05;
+      if (inv.elbows) inv.elbows[1].rotation.x = player.hidden ? -0.1 : -0.35 + Math.sin(t * 2.1) * 0.03;
+      if (inv.head) { inv.head.rotation.y = Math.sin(t * 0.6) * 0.18 * (1 - amt); inv.head.rotation.x = Math.sin(t * 2.1) * 0.02; }
+      if (inv.lantern) inv.lantern.rotation.z = Math.sin(this.playerWalk * 2) * 0.18 * amt + Math.sin(t * 1.7) * 0.04;
 
       // weapon arm (left): idle carry + per-weapon swing
       const a = player.attackAnim || 0; // 1 -> 0
       const p = 1 - a;
       const arm = inv.arms[0];
       arm.rotation.set(0, 0, 0);
+      if (inv.elbows) inv.elbows[0].rotation.x = weapon === "crossbow" ? 0 : a > 0 ? -0.1 : -0.35;
       if (weapon === "crossbow") {
         arm.rotation.x = -1.45 + (a > 0 ? Math.sin(p * Math.PI) * 0.35 : 0);
       } else if (a > 0) {
@@ -1630,7 +2044,8 @@ export class Renderer3D {
       const lowOilFlicker = player.oil < 15 ? 0.6 + 0.4 * Math.abs(Math.sin(t * 26)) : 1;
       const cursed = darkCurse > 0;
       const lm = player.lanternMul || 1; // Wider Wick upgrade
-      this.spot.intensity = 60 * lowOilFlicker * (cursed ? 0.28 : 1) * (0.6 + 0.4 * lm);
+      const wick = 0.94 + 0.04 * Math.sin(t * 9.3) + 0.02 * Math.sin(t * 23.7);
+      this.spot.intensity = 66 * wick * lowOilFlicker * (cursed ? 0.28 : 1) * (0.6 + 0.4 * lm);
       this.spot.distance = (cursed ? 6.5 : 16) * lm;
       this.spot.angle = Math.min(0.95, (cursed ? 0.34 : 0.62) * (0.5 + 0.5 * lm));
       this.spot.position.set(px + dirX * 0.45, 1.25, pz + dirZ * 0.45);
@@ -1715,10 +2130,22 @@ export class Renderer3D {
     const ref = focus || (countess ? new THREE.Vector3(countess.x * S, 0, countess.y * S) : new THREE.Vector3());
     if (this.lightPoolTimer <= 0) {
       this.lightPoolTimer = 0.3;
-      const order = this.brazierPos.map((p, i) => [p.distanceToSquared(ref), i]).sort((a, b) => a[0] - b[0]).slice(0, this.brazierLights.length);
-      order.forEach(([, i], k) => { const p = this.brazierPos[i]; this.brazierLights[k].light.position.set(p.x, 1.8, p.z); });
+      const live = this.flameLights.filter((f) => f.light.visible);
+      // weight by reach so a far brazier still beats a near candle stub
+      const order = this.flameSources.map((s, i) => [s.p.distanceToSquared(ref) / (s.dist * s.dist), i]).sort((a, b) => a[0] - b[0]).slice(0, live.length);
+      const want = new Set(order.map(([, i]) => this.flameSources[i]));
+      // keep lights that are already on a wanted source (no popping), re-home the rest
+      const free = [];
+      for (const f of live) { if (f.src && want.has(f.src)) want.delete(f.src); else free.push(f); }
+      for (const f of free) {
+        const s = want.values().next().value;
+        if (!s) { f.src = null; f.light.position.set(-100, -100, -100); f.base = 0; continue; }
+        want.delete(s);
+        f.src = s; f.base = s.base;
+        f.light.position.copy(s.p); f.light.distance = s.dist; f.light.color.setHex(s.color);
+      }
     }
-    for (const b of this.brazierLights) b.light.intensity = b.base * (0.85 + 0.15 * Math.sin(t * 11 + b.seed) + 0.08 * Math.sin(t * 23 + b.seed * 3));
+    for (const b of this.flameLights) b.light.intensity = b.base * (0.82 + 0.13 * Math.sin(t * 11 + b.seed) + 0.08 * Math.sin(t * 23 + b.seed * 3) + 0.05 * Math.sin(t * 37 + b.seed * 5));
 
     // ---------- Camera ----------
     const dangerRed = countess && countess.state === AI_STATE.HUNT ? 1 : 0;
@@ -1729,6 +2156,7 @@ export class Renderer3D {
       this.camera.lookAt(f.x, 0.35, f.z);
       U_PLAYER.value.copy(f);
       U_CAM.value.copy(this.camera.position);
+      if (this.fill) this.fill.position.set(f.x, -50, f.z);
       this.snapCam = true;
       SNAP.value.copy(this.baseSnap);
       this.postMat.uniforms.uGlitch.value = 0;
@@ -1748,6 +2176,12 @@ export class Renderer3D {
         ? new THREE.Vector3(((room.x0 + room.x1 + 1) / 2) * TILE, 0, ((room.y0 + room.y1 + 1) / 2) * TILE)
         : focus;
       const desired = camF.clone().add(this.camOffset);
+      if (this.stage === 3 && this.floorDef) {
+        // the high riddle-room cameras sit beyond the floor fog: push it back while inside
+        const far = room && room.sealed;
+        this.scene.fog.near = far ? 20 : this.floorDef.open ? 10 : 8.5;
+        this.scene.fog.far = far ? 44 : this.floorDef.open ? 30 : 26;
+      }
       const look = camF.clone().add(new THREE.Vector3(0, 1.0, this.lastRoomKey === "doorway" ? 0.9 : -0.6));
       if (this.snapCam) {
         this.camOffset.copy(off);
@@ -1764,14 +2198,23 @@ export class Renderer3D {
       this.camera.lookAt(this.camLook);
       U_PLAYER.value.copy(focus);
       U_CAM.value.copy(this.camera.position);
+      if (this.fill) {
+        const toCam = this.camera.position.clone().sub(focus).setY(0).normalize();
+        this.fill.position.set(focus.x + toCam.x * 1.5, 2.1, focus.z + toCam.z * 1.5);
+        this.fill.visible = true;
+      }
       const warp = 1 - lowSan * 0.55;
       SNAP.value.set(this.baseSnap.x * warp, this.baseSnap.y * warp);
       this.postMat.uniforms.uGlitch.value = lowSan > 0 ? lowSan * (0.5 + 0.5 * Math.sin(t * 9)) : 0;
     }
 
     if (this.stage === 2) this.fogColor.setHex(witching ? 0x241018 : 0x1a2232);
+    else if (this.stage === 3 && this.floorDef) this.fogColor.setHex(witching ? 0x1c0408 : this.floorDef.fog);
     else this.fogColor.setHex(witching ? 0x1c0408 : 0x0a0610);
-    this.postMat.uniforms.uMoon.value = this.stage === 2 && !inMenu ? 1 : 0;
+    // on the tower top the moon sits small in the corner, clear of the gargoyle's approach
+    if (this.stage === 3) this.postMat.uniforms.uMoonP.value.set(0.17, 0.7, 0.7); else this.postMat.uniforms.uMoonP.value.set(0.7, 0.75, 1.0);
+    this.postMat.uniforms.uMoon.value = (this.stage === 2 || (this.stage === 3 && this.floorDef && this.floorDef.open)) && !inMenu ? 1 : 0;
+    this._grade(witching);
     this.postMat.uniforms.uRedShift.value = dangerRed * 0.45;
     this.postMat.uniforms.uIce.value = countess && countess.state === AI_STATE.FROZEN && !inMenu ? 1 : 0;
     this.postMat.uniforms.uHurt.value = hurt;
@@ -1790,7 +2233,8 @@ export class Renderer3D {
   _buildBreakables(level, woodMat, ironMat) {
     const list = level.breakables || [];
     const crates = list.filter((b) => b.type === "crate" || b.type === "coffin");
-    const barrels = list.filter((b) => b.type === "barrel" || b.type === "urn");
+    const barrels = list.filter((b) => b.type === "barrel" || b.type === "urn" || b.type === "cask");
+    const shelves = list.filter((b) => b.type === "bookshelf");
     const plank = this._mat("crate-plank", { map: this.T.wood, emissive: 0x120a04 });
     if (level.stage === 2) {
       // Coffins (big) and funeral urns (small) share the crate/barrel instancing slots.
@@ -1808,17 +2252,33 @@ export class Renderer3D {
     this.crateBig = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 1.0, 1.2), plank, Math.max(1, crates.length));
     this.crateTop = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.7, 0.8), plank, Math.max(1, crates.length));
     this.crateBand = new THREE.InstancedMesh(new THREE.BoxGeometry(1.26, 0.1, 1.26), ironMat, Math.max(1, crates.length));
-    this.barrelBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), woodMat, Math.max(1, barrels.length));
+    // Stage III wine casks: bellied, darker oak
+    const caskMat = level.stage === 3 ? this._mat("cask-wood", { map: this.T.wood, color: 0x8a5a3a, emissive: 0x0c0604 }) : woodMat;
+    this.barrelBody = new THREE.InstancedMesh(level.stage === 3 ? new THREE.CylinderGeometry(0.44, 0.44, 1.1, 8).scale(1.08, 1, 1.08) : new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), caskMat, Math.max(1, barrels.length));
     this.barrelBand = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 8), ironMat, Math.max(1, barrels.length * 2));
     }
-    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand]) {
+    // Stage III bookshelves: a tall case and its spilling row of books
+    this.shelfBody = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 2.4, 0.7), woodMat, Math.max(1, shelves.length));
+    this.shelfBooks = new THREE.InstancedMesh(new THREE.BoxGeometry(1.6, 2.1, 0.74), this._mat("shelf-books", { map: this.T.books || this.T.wood }), Math.max(1, shelves.length));
+    if (!shelves.length) { this.shelfBody.count = 0; this.shelfBooks.count = 0; }
+    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand, this.shelfBody, this.shelfBooks]) {
       im.castShadow = true;
       im.receiveShadow = true;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       this.scene.add(im);
     }
     const rnd = seeded(77);
-    this.brkMeta = list.map((b) => ({ rot: rnd() * Math.PI, top: rnd() * Math.PI, idx: (crates.includes(b) ? crates : barrels).indexOf(b), big: crates.includes(b) }));
+    this.brkMeta = list.map((b) => ({ rot: rnd() * Math.PI, top: rnd() * Math.PI, idx: (crates.includes(b) ? crates : shelves.includes(b) ? shelves : barrels).indexOf(b), big: crates.includes(b), shelf: shelves.includes(b) }));
+    // shelves stand flush against the nearest wall
+    this.brkMeta.forEach((m, k) => {
+      if (!m.shelf) return;
+      const b = list[k];
+      const g = level.grid;
+      const wallN = g[b.ty - 1] && g[b.ty - 1][b.tx] === 1, wallS = g[b.ty + 1] && g[b.ty + 1][b.tx] === 1;
+      const wallW = g[b.ty][b.tx - 1] === 1, wallE = g[b.ty][b.tx + 1] === 1;
+      m.rot = wallW || wallE ? Math.PI / 2 : 0;
+      m.off = wallW ? [-0.55, 0] : wallE ? [0.55, 0] : wallN ? [0, -0.55] : wallS ? [0, 0.55] : [0, 0];
+    });
     this._brkObj = new THREE.Object3D();
     this._syncBreakables(level, 0);
   }
@@ -1842,7 +2302,11 @@ export class Renderer3D {
       const wob = b.hitT > 0 ? Math.sin(b.hitT * 60) * 0.12 * (b.hitT / 0.3) : 0;
       const dmgTilt = b.broken ? 0 : (1 - b.hp / b.maxHp) * 0.12;
       const i = meta.idx;
-      if (this.brkStyle === 2 && meta.big) {
+      if (meta.shelf) {
+        const [ox, oz] = meta.off || [0, 0];
+        put(this.shelfBody, i, c.x + ox, 1.2 * sc, c.z + oz, meta.rot + wob, sc, dmgTilt);
+        put(this.shelfBooks, i, c.x + ox, 1.18 * sc, c.z + oz, meta.rot + wob, sc, dmgTilt);
+      } else if (this.brkStyle === 2 && meta.big) {
         put(this.crateBig, i, c.x, 0.3 * sc, c.z, meta.rot * 0.3 + wob, sc, dmgTilt);
         put(this.crateTop, i, c.x, 0.67 * sc, c.z, meta.rot * 0.3 - wob * 1.5, sc, -dmgTilt * 2);
         put(this.crateBand, i, c.x, 0.76 * sc, c.z, meta.rot * 0.3 - wob * 1.5, sc, -dmgTilt * 2);
@@ -1860,7 +2324,7 @@ export class Renderer3D {
         put(this.barrelBand, i * 2 + 1, c.x, 0.85 * sc, c.z, meta.rot + wob, sc, dmgTilt + wob * 0.5);
       }
     });
-    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand]) im.instanceMatrix.needsUpdate = true;
+    for (const im of [this.crateBig, this.crateTop, this.crateBand, this.barrelBody, this.barrelBand, this.shelfBody, this.shelfBooks]) im.instanceMatrix.needsUpdate = true;
   }
 
   _buildChambers(level, wallSide, wallTop, woodMat, ironMat, goldMat, stoneMat) {

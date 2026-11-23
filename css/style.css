@@ -879,3 +879,69 @@ h2 {
 .puzzle-hud.flood .puzzle-title { color: #8ad8e8; }
 .puzzle-hud.flood #puzzle-fill { background: linear-gradient(90deg, #0e3a44, #4ad0e8); }
 .puzzle-hud.crypt .puzzle-title { color: var(--gold-bright); }
+
+/* ======================================================================
+   v0.7 — UI polish: ornate frames, cards, quality chip, boss bar, Stage III
+   ====================================================================== */
+.card-frame {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(139, 0, 24, 0.16) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 4px),
+    linear-gradient(170deg, #181119 0%, #0b070c 100%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9), 0 0 0 5px rgba(139, 0, 24, 0.3), inset 0 0 0 1px rgba(231, 200, 115, 0.12), inset 0 0 40px rgba(0, 0, 0, 0.7), 0 18px 50px rgba(0, 0, 0, 0.92);
+}
+/* gilt corner brackets */
+.card-frame::before, .card-frame::after {
+  content: ""; position: absolute; width: 26px; height: 26px; pointer-events: none;
+  border: 2px solid var(--gold-bright); opacity: 0.75; filter: drop-shadow(0 0 4px rgba(231, 200, 115, 0.45));
+}
+.card-frame::before { top: 6px; left: 6px; border-right: none; border-bottom: none; border-top-left-radius: 8px; }
+.card-frame::after { bottom: 6px; right: 6px; border-left: none; border-top: none; border-bottom-right-radius: 8px; }
+.card-frame h2 { letter-spacing: 0.08em; }
+
+/* death card: blood-red, cracked feel */
+.death-card { border-color: var(--crimson-bright) !important; background: radial-gradient(ellipse at 50% -10%, rgba(212, 28, 59, 0.28) 0%, transparent 55%), linear-gradient(170deg, #1a080c 0%, #090406 100%) !important; }
+.death-card::before, .death-card::after { border-color: var(--crimson-bright); filter: drop-shadow(0 0 5px rgba(212, 28, 59, 0.6)); }
+.death-card .death-emblem { box-shadow: 0 0 22px rgba(212, 28, 59, 0.55), inset 0 0 12px rgba(0, 0, 0, 0.8); }
+.death-stage { font-family: "Courier New", monospace; font-size: 10.5px; letter-spacing: 0.24em; color: #c8a0a8; margin: -4px 0 6px; }
+#screen-death:not(.hidden) .death-card { animation: deathIn 0.9s ease both; }
+@keyframes deathIn { 0% { opacity: 0; transform: scale(1.06); filter: blur(3px) saturate(2); } 100% { opacity: 1; transform: none; filter: none; } }
+
+/* win / relic card */
+.win-card { background: radial-gradient(ellipse at 50% -10%, rgba(255, 210, 120, 0.22) 0%, transparent 55%), linear-gradient(170deg, #1a1410 0%, #0a0806 100%) !important; }
+.relic-card { box-shadow: 0 0 18px rgba(231, 200, 115, 0.25), inset 0 0 18px rgba(0, 0, 0, 0.6); }
+
+/* stage screen variants */
+#screen-stage.climb { background: radial-gradient(circle at 50% 12%, rgba(230, 150, 90, 0.22) 0%, rgba(26, 10, 8, 0.94) 40%, rgba(4, 2, 2, 0.98) 100%); }
+#screen-stage.climb .stage-card-frame { border-color: #c98a4d; background: linear-gradient(170deg, rgba(30, 16, 12, 0.94), rgba(10, 6, 6, 0.97)); }
+#screen-stage.climb .stage-moon { background: radial-gradient(circle at 40% 40%, #ffe6b0 0%, #e8a860 55%, #a05a28 100%); box-shadow: 0 0 60px 20px rgba(255, 170, 90, 0.35); }
+#screen-stage.climb .stage-next { color: #e8b080; }
+#screen-stage.climb .stage-title { color: #fff0dc !important; text-shadow: 0 0 18px rgba(232, 150, 90, 0.6); }
+
+/* in-game stage / floor card */
+.stage-card::before { content: ""; display: block; width: 180px; height: 1px; margin: 0 auto 8px; background: linear-gradient(90deg, transparent, var(--gold-bright), transparent); }
+.stage-card::after { content: ""; display: block; width: 180px; height: 1px; margin: 8px auto 0; background: linear-gradient(90deg, transparent, var(--gold-bright), transparent); }
+.stage-card.floor { top: 24%; animation-duration: 3.2s; }
+.stage-card.floor .stage-card-num { color: #e8c890; }
+.stage-card.floor .stage-card-title { font-size: 24px; }
+
+/* title: Stage III chip + quality chip */
+.stage-chip.tower { border-color: #c98a4d; color: #ffd8a8; background: rgba(40, 18, 10, 0.85); }
+.quality-chip { font-family: inherit; }
+.quality-chip b { color: var(--gold-bright); font-weight: 700; letter-spacing: 0.06em; }
+button.toggle-chip:active, .stage-chip:active { transform: scale(0.96); }
+
+/* boss bar */
+.boss-bar { position: absolute; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 118px); width: min(300px, 74vw); z-index: 8; text-align: center; pointer-events: none; }
+.boss-name { font-family: "Courier New", monospace; font-size: 10.5px; letter-spacing: 0.3em; color: #ffb07a; text-shadow: 0 0 6px #000, 0 0 12px rgba(255, 120, 40, 0.6); margin-bottom: 3px; }
+.boss-track { height: 7px; border: 1px solid #c98a4d; border-radius: 4px; background: rgba(10, 4, 2, 0.85); overflow: hidden; box-shadow: 0 0 10px rgba(255, 120, 40, 0.3); }
+#boss-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #6a1a08, #ff7a2a, #ffd080); transition: width 0.15s; }
+
+/* Stage III puzzle HUD tints */
+.puzzle-hud.mirrors { border-color: #9ab8e0; box-shadow: 0 0 18px rgba(154, 184, 224, 0.35); }
+.puzzle-hud.mirrors .puzzle-title { color: #d8e8ff; }
+.puzzle-hud.mirrors #puzzle-fill { background: linear-gradient(90deg, #6a5a20, #fff0b0); }
+.puzzle-hud.clock { border-color: #c9a24d; box-shadow: 0 0 18px rgba(201, 162, 77, 0.35); }
+.puzzle-hud.clock .puzzle-title { color: #ffd86a; }
+.puzzle-hud.clock #puzzle-fill { background: linear-gradient(90deg, #5a0a14, #e7c873); }

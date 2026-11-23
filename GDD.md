@@ -246,6 +246,60 @@ Reward: Gilded mirror, 35 coins, sanity restored to 100.
 
 Reward: Obsidian mirror, 45 coins, armor to 100. The water drains.
 
+---
+
+## 5c. Stage III — The Climb (v0.7)
+Clearing Stage II (five grave rubbings, then the Gatehouse road) unlocks **Stage III: The Climb** (`csejte_stage3`). Coins, weapon, bolts, mirrors, armor and any speed tonic carry over, and the Hooded Pedlar also appears between Stage II and Stage III. On the title screen, **CONTINUE** advances to Stage III once unlocked, and a **III · THE CLIMB** stage chip appears.
+
+**Six connected floors** (each a distinct walled region joined by stairs; tap **CLIMB** / **DESCEND** at a stair; climbing up is barred until you break that floor's **Tower Seal**):
+
+| Floor | Name | Look & Lighting | Countess Aggro | Seal |
+| :--- | :--- | :--- | :---: | :--- |
+| I | **The Cellar & Wine Vaults** | Damp brick, cobbled floor, wine racks, cistern (well), warm amber grade | 1.00× | *The Cellarer's Tally* |
+| II | **The Torture Chambers** | Crimson-lit stone, iron racks, cages, blood floor | 1.08× | *The Gaoler's Ring* |
+| III | **The Servants' Floor** | Plaster walls, timber floor, straw cots, the Hooded Pedlar's stall | 1.16× | *The Housekeeper's Ledger* |
+| IV | **The Library & Study** | Parquet floor, tall bookshelves, desks, flickering candles, emerald-tinted study light | 1.24× | *The Physician's Letter* |
+| V | **The Countess's Bedchamber** | Velvet carpet, patterned wallpaper, four-poster bed, vanity | 1.34× | *Her Own Hand* |
+| VI | **The Tower Top** | Open-air slate battlements, crenellated parapets, moonlight, warning bell, dawn stair exit | 1.45× | Boss guard |
+
+- **Countess on the Climb:** She starts ~8s behind you on Floor I and follows ~`max(4, 10 − floor)` seconds after you take any stair, reappearing at a far waypoint on your new floor. Her speed, sight range and re-manifest pace scale with the floor's aggression multiplier.
+- **Breakables:** Wine casks (2 hits), crates (3 hits) and library bookshelves (3 hits) break for the same crate loot table.
+- **Minimap:** Crops and zooms to the current tower floor, marking stairs (red = barred, gold = open, blue = down) and the roof boss.
+
+**New monsters & boss:**
+| Monster | HP | Speed (wander/chase) | Damage | Notes |
+| :--- | ---: | :--- | ---: | :--- |
+| **Chained Prisoner** | 40 | 38 / 72 | 11 | Drags an iron collar, manacles and 6-link chain & ball (Floors I–III) |
+| **Iron Maiden Walker** | 110 | 26 / 50 | 24 | Armored (0.6× damage taken), except ×1.5 damage while its spiked doors swing open to strike (Floors II, V) |
+| **Portrait Wraith** | 34 | 50 / 80 | 9 | Floats in a shattered gilt frame; blinks toward you when seen from afar (−4 sanity) (Floors IV–V) |
+| **The Tower Gargoyle** *(Boss)* | 420 | 40 / 70 | 26 | Guards Floor VI with a boss health bar; swoops across the roof every ~6s. Must be slain (alongside all 5 Tower Seals) to open the Dawn Stair |
+
+### Stage III Puzzle Chambers
+Keys drop at **15** and **30** kills as in Stages I–II.
+
+**Chamber I — The Hall of Mirrors (Key I, Torture Chambers south door).** A burning lamp sits in the west wall, a sun seal in the east wall, two of the Countess's portraits on the walls, and four turning standing mirrors (A–D) plus a brass shutter lever. Tap **TURN** at each mirror to swing between `/` and `\`, then tap **OPEN** at the shutter to fire the light beam. If the beam hits a portrait, a Portrait Wraith steps out of the frame, you lose sanity, and the mirrors reset.
+> *The Hall of Mirrors* — The lamp was lit in the west at dusk. / First it falls, as all things fall; / then it runs the length of the floor toward morning; / then it climbs, as the Lady climbed; / and last it turns to the east, and wakes the sun.
+>
+> **Answer:** Turn all four glasses once from their starting angles → **A `\`, B `\`, C `/`, D `/`**, then **OPEN** the shutter.
+
+Reward: Gilded mirror, 40 coins, Sanity restored to 100.
+
+**Chamber II — The Clock Library (Key II, Servants' Floor south door).** A tall grandfather clock ticks toward the thirteenth hour (~50s timer) surrounded by five lectern books marked `IX`, `XII`, `III`, `VI`, and `XIII`. **PULL** the hours of her day in order before time expires; pulling a wrong hour (or `XIII`) slams every book back in and jumps the clock forward by 8s. Reaching thirteen strikes crushes you in the pages.
+> *The Lady's Hours* — She rises when the short hand points to where the sun goes down; / she dines when both hands kneel together at the crown; / she writes her ledger at the hour of the dawn she fears; / and she sleeps when the hand hangs down toward the cellar.
+>
+> **Answer:** **IX → XII → III → VI** (avoid `XIII`).
+
+Reward: Obsidian mirror, 50 coins, Armor to 100.
+
+---
+
+## 5d. Graphics Overhaul & Quality Presets (v0.7)
+All three stages keep the PS1 / FF7 low-poly silhouette while upgrading lighting, models, particles and post-processing:
+- **Models & Textures (`js/characters.js`, `js/textures_hd.js`):** Articulated limbs (knees, elbows, coat tails, layered gown, jaws, chains, wings), vertex-color baked AO gradients, procedural 64px world textures and 32px character/face textures, plus idle, walk, swing, and enemy-specific animations.
+- **Dynamic Lighting & Particles (`js/render3d.js`):** Soft-falloff lantern spotlight + camera-side fill light so the player always reads cleanly; a pool of up to 6 dynamic flickering point lights re-homed to nearby sconces, candles and braziers; floor mist, rising embers, dust motes, sparks, blood gore bursts, and fading floor blood decals.
+- **Post-Processing:** Per-stage/floor color grading (gain, lift, saturation), bloom-lite glow bleed, film grain/dither, vignette, and optional chromatic aberration on High.
+- **Quality Toggle (`js/quality.js`):** Cycles **AUTO / LOW / MEDIUM / HIGH** from the title screen or pause menu (`csejte_quality`). Presets scale internal resolution (`220` / `290` / `360` px), shadow map (`off` / `512` / `1024`), active flame lights (`2` / `4` / `6`), particle budgets, bloom, grain, decals (`12` / `28` / `48`), and CA. **AUTO** monitors live FPS while playing and steps down if frame rate dips.
+
 ## 6. Enemies & Countess AI
 
 ### Primary Stalker: Elizabeth Báthory (The Blood Countess)
