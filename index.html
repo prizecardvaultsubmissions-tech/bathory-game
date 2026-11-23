@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#8b0018" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Blood Ledger" />
+  <title>Csejte: Blood Ledger</title>
+  <script>
+    // Keep a trailing slash so relative CSS/JS/manifest/SW paths resolve under /bathory-game/ on GitHub Pages.
+    (function () {
+      var path = location.pathname;
+      if (!path.endsWith("/") && !path.endsWith(".html")) {
+        location.replace(path + "/" + location.search + location.hash);
+      }
+    })();
+  </script>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Subtle gothic vignette & danger pulse overlays -->
+    <div id="danger-vignette" aria-hidden="true"></div>
+    <div id="sanity-glitch" aria-hidden="true"></div>
+
+    <!-- TOP HUD (visible during gameplay) -->
+    <header id="hud" class="hidden">
+      <div class="hud-left">
+        <div class="hud-pill pages-pill" title="Ledger Pages Recovered">
+          <span class="pill-label">LEDGER</span>
+          <span id="hud-pages" class="pill-value gold">0 / 5</span>
+        </div>
+        <div id="hud-status" class="hud-pill status-pill unseen">UNSEEN</div>
+      </div>
+
+      <div class="hud-bars">
+        <div class="bar-group">
+          <div class="bar-label"><span>SANITY</span><span id="hud-sanity-val">100%</span></div>
+          <div class="bar-track"><div id="hud-sanity-bar" class="bar-fill sanity"></div></div>
+        </div>
+        <div class="bar-group">
+          <div class="bar-label"><span>LAMP OIL</span><span id="hud-oil-val">100%</span></div>
+          <div class="bar-track"><div id="hud-oil-bar" class="bar-fill oil"></div></div>
+        </div>
+      </div>
+
+      <div class="hud-actions">
+        <button id="btn-mute" class="icon-btn" aria-label="Toggle Sound" title="Toggle Sound">🔊</button>
+        <button id="btn-pause" class="icon-btn" aria-label="Pause" title="Pause">☰</button>
+      </div>
+    </header>
+
+    <!-- Context prompt banner -->
+    <div id="prompt-banner" class="hidden"></div>
+
+    <!-- ON-SCREEN TOUCH CONTROLS -->
+    <div id="touch-controls" class="hidden">
+      <div id="joystick-zone" aria-label="Movement Joystick">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+        <div class="joystick-hint">MOVE</div>
+      </div>
+
+      <div id="action-cluster">
+        <button id="btn-flare" class="action-btn crimson" type="button">
+          <span class="btn-title">FLARE</span>
+          <span id="flare-cd" class="btn-sub">READY</span>
+        </button>
+        <button id="btn-douse" class="action-btn amber" type="button">
+          <span class="btn-title">DOUSE</span>
+          <span id="douse-state" class="btn-sub">LIT</span>
+        </button>
+        <button id="btn-interact" class="action-btn gold primary" type="button">
+          <span id="interact-label" class="btn-title">SEARCH</span>
+          <span class="btn-sub">ACT</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TITLE SCREEN -->
+    <section id="screen-title" class="overlay-screen">
+      <div class="card-frame title-card">
+        <div class="wax-crest" aria-hidden="true">❖</div>
+        <div class="build-tag">CSEJTE_DEV_09 // HOUSE OF HORRORS</div>
+        <h1>CSEJTE:<br/><span>BLOOD LEDGER</span></h1>
+        <p class="subtitle">
+          A cursed 16th-century castle build. Recover all five torn ledger pages, evade the Blood Countess in the dark, and unseal the Outer Gate.
+        </p>
+
+        <div id="witching-badge" class="witching-badge hidden">
+          ☾ WITCHING HOUR ACTIVE — THE COUNTESS WAKES FASTER
+        </div>
+
+        <div id="title-whisper" class="whisper-line"></div>
+
+        <div class="title-buttons">
+          <button id="btn-start" class="gothic-btn primary-cta" type="button">ENTER THE CASTLE</button>
+          <button id="btn-how" class="gothic-btn secondary-cta" type="button">CONTROLS &amp; SURVIVAL</button>
+        </div>
+
+        <div class="toggles-row">
+          <label class="toggle-chip">
+            <input type="checkbox" id="chk-sound" checked />
+            <span>Audio (WebAudio)</span>
+          </label>
+          <label class="toggle-chip">
+            <input type="checkbox" id="chk-curse" />
+            <span>Opt-In Curse Alerts</span>
+          </label>
+        </div>
+        <p class="curse-note">
+          Curse Alerts are 100% harmless &amp; opt-in local whispers. Keyboard fallback: WASD, F (Douse), E (Act/Hide), Q (Flare).
+        </p>
+      </div>
+    </section>
+
+    <!-- HOW TO PLAY / PAUSE MODAL -->
+    <section id="screen-help" class="overlay-screen hidden">
+      <div class="card-frame modal-card">
+        <h2>SURVIVAL CODEX</h2>
+        <ul class="codex-list">
+          <li><strong>Lantern &amp; Stealth:</strong> Your beam reveals pages and traps—but the Countess sees light from afar. Tap <em>DOUSE</em> to vanish in shadow, though darkness drains <strong>Sanity</strong>.</li>
+          <li><strong>Iron Alcoves:</strong> Step into recessed stone alcoves and tap <em>HIDE</em> to conceal yourself while she passes. Don't let her watch you enter.</li>
+          <li><strong>Wall Braziers:</strong> Stand near glowing braziers to refill <strong>Lamp Oil</strong> and steady your <strong>Sanity</strong>.</li>
+          <li><strong>Lamp Flare:</strong> Emergency 360° burst (costs 20% oil). Stuns the Countess for 1.5s if she's close.</li>
+          <li><strong>Cracked Glass:</strong> Stepping on shattered glass rings through the ward and draws her to investigate.</li>
+        </ul>
+        <div class="title-buttons">
+          <button id="btn-help-close" class="gothic-btn primary-cta" type="button">RESUME</button>
+          <button id="btn-help-quit" class="gothic-btn secondary-cta hidden" type="button">RETURN TO TITLE</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- LORE PAGE MODAL -->
+    <section id="screen-lore" class="overlay-screen hidden">
+      <div class="card-frame parchment-card">
+        <div class="lore-header">
+          <span id="lore-page-num" class="lore-num">LEDGER PAGE I</span>
+          <span class="lore-seal">WAX SEAL BROKEN</span>
+        </div>
+        <h2 id="lore-title"></h2>
+        <p id="lore-body" class="lore-body"></p>
+        <p id="lore-postscript" class="lore-postscript hidden"></p>
+        <button id="btn-lore-close" class="gothic-btn primary-cta" type="button">POCKET PAGE (+12% SANITY)</button>
+      </div>
+    </section>
+
+    <!-- DEATH SCREEN -->
+    <section id="screen-death" class="overlay-screen hidden">
+      <div class="card-frame death-card">
+        <div class="death-emblem">✕</div>
+        <div class="build-tag crimson-text">THE LEDGER CLAIMS ANOTHER NAME</div>
+        <h2>TAKEN IN THE DARK</h2>
+        <p id="death-reason" class="subtitle"></p>
+        <div class="stats-grid">
+          <div class="stat-box"><span>PAGES FOUND</span><strong id="death-pages">0 / 5</strong></div>
+          <div class="stat-box"><span>SURVIVED</span><strong id="death-time">0:00</strong></div>
+        </div>
+        <p class="echo-note">Your fallen lantern stays lit on the stones for your next attempt.</p>
+        <div class="title-buttons">
+          <button id="btn-retry" class="gothic-btn primary-cta" type="button">RISE AGAIN</button>
+          <button id="btn-death-title" class="gothic-btn secondary-cta" type="button">TITLE SCREEN</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- WIN SCREEN -->
+    <section id="screen-win" class="overlay-screen hidden">
+      <div class="card-frame win-card">
+        <div class="win-emblem">♛</div>
+        <div class="build-tag gold-text">HOUSE OF HORRORS // RELIC UNLOCKED</div>
+        <h2>GATE OF CSEJTE UNSEALED</h2>
+        <p class="subtitle">
+          With all five pages bound and Palatine Thurzó's riders cresting the ridge, you slip beyond the Outer Portcullis before the Countess can seal the ward.
+        </p>
+        <div class="stats-grid">
+          <div class="stat-box"><span>ESCAPE TIME</span><strong id="win-time">0:00</strong></div>
+          <div class="stat-box"><span>SANITY LEFT</span><strong id="win-sanity">100%</strong></div>
+        </div>
+        <div class="relic-card">
+          <div class="relic-foil">FOIL SEAL UNLOCKED</div>
+          <div class="relic-name">Elizabeth Báthory — The Csejte Ledger</div>
+          <div class="relic-sub">Level 1 Complete • Prototype Build v0.1</div>
+        </div>
+        <div class="title-buttons">
+          <button id="btn-play-again" class="gothic-btn primary-cta" type="button">PLAY AGAIN</button>
+          <button id="btn-win-title" class="gothic-btn secondary-cta" type="button">TITLE SCREEN</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./js/game.js"></script>
+</body>
+</html>
