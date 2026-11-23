@@ -1,6 +1,6 @@
 # Csejte: Blood Ledger
 
-A mobile-first gothic stealth horror prototype for Prize Card Vault / *House of Horrors*.
+A mobile-first gothic stealth horror prototype for Prize Card Vault / *House of Horrors*, rendered in PS1-era low-poly 3D (Three.js, bundled locally).
 
 Play the public test build: **https://prizecardvaultsubmissions-tech.github.io/bathory-game/**
 
@@ -18,3 +18,7 @@ python3 -m http.server 8765 --bind 127.0.0.1
 Touch controls work on a phone browser. Keyboard fallback: WASD to move, E to act/hide, F to douse the lantern, Q to flare.
 
 See `GDD.md` for the full design document, title options, and the path to App Store / Google Play via Capacitor.
+
+## QA
+
+`qa/qa_3d.py` runs Playwright at a 390x844 phone viewport, captures `screens/`, and fails loudly on console errors. Add `?qa` to the URL to expose a small test hook.

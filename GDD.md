@@ -104,18 +104,33 @@ Four-state finite state machine (`PATROL` → `INVESTIGATE` → `HUNT` → `SEAR
 
 ---
 
-## 9. Art Direction (*House of Horrors* Alignment)
+## 9. Art Direction (*House of Horrors* Alignment) — v0.2 "PS1-Era 3D"
 
-- **Color Palette:**
-  - Obsidian Crypt Black: `#0A080C`
-  - Arterial Crimson / Wax Seal: `#8B0018` & `#C41230`
-  - Tarnished Antique Gold: `#C9A24D` & `#E7C873`
-  - Aged Parchment Bone: `#E8DEC8`
-  - Cold Moonlight Slate: `#2A3441` / `#4B6478`
-- **Visual Style:** High-contrast top-down gothic masonry illuminated by real-time 2D raycast shadows, floating dust embers, blood-flecked decals, and gold-bordered trading-card HUD frames matching Dante's *Prize Card Vault: House of Horrors* aesthetic.
-- **Audio:** 100% procedural WebAudio (sub-bass cathedral drone, proximity heartbeat, parchment rustle, stone steps, shatter traps, Countess detection sting)—zero copyrighted audio samples.
+After Dante's first playtest, the mechanics stayed and the visuals moved from flat 2D to **real-time 3D in the style of late-'90s PlayStation RPGs** (the Final Fantasy VII era). Every asset is original: no models, textures, names, or music from any existing game.
 
----
+- **Engine:** Three.js r170, bundled locally at `js/vendor/three.module.min.js` with no CDN at runtime.
+- **PS1 render pipeline:**
+  - The scene renders at a low internal resolution (short side about 240 px) and is upscaled nearest-neighbor.
+  - Vertex snapping gives the classic PS1 "wobble", and it gets stronger as Sanity drops.
+  - A post pass quantizes to 15-bit color with a 4×4 ordered dither, adds a light vignette, and adds a scanline-tear glitch at low Sanity.
+- **Textures:** All are procedural pixel art (8–32 px) with nearest-neighbor filtering. That covers castle brick with blood drips, flagstones, crimson tapestries with a gold three-tooth crest, rugs, riveted iron, parchment, the trench coat, the brocade gown, the pleated ruff, and 8×8 faces.
+- **Characters:** Low-poly and blocky, with FF7-style big heads and chunky hands. Each is a few hundred triangles.
+  - *Investigator:* flat cap, trench coat, crimson scarf, and a hand lantern that is the real light source.
+  - *Blood Countess:* a tall flared brocade gown, white ruff collar, gold coif, pale 8×8 face, and glowing red eyes. Her animation is procedural: walk sway, a hover/breath bob, arms reaching out while hunting, and a recoil when stunned.
+- **Camera:** A semi-fixed cinematic camera with a different angle per castle wing (north ward, great hall, south hall), which echoes FF7's pre-rendered rooms. The yaw stays fixed, so the joystick always maps to the same screen direction. It moves into a tighter close-up while you hide. Walls between the camera and the player dissolve with a dithered "screen-door" cutaway.
+- **Lighting:**
+  - The lantern is a real spotlight with shadow mapping.
+  - Braziers are flickering point lights.
+  - The Countess carries a red under-glow.
+  - The North Portcullis glows red while sealed and gold once all five wax seals break.
+  - The scene also has purple-black fog, candle clusters, wall sconces, drifting ash, and light pillars over ledger pages.
+- **Palette:** Obsidian `#0A080C`, arterial crimson `#8B0018` / `#C41230`, antique gold `#C9A24D` / `#E7C873`, parchment `#E8DEC8`, and cold moonlight `#4B6478`.
+- **Performance budget:**
+  - The renderer caps the pixel ratio at 1 and uses the low-resolution target.
+  - Walls, trim, tapestries, candles, sconces, and glass are instanced, and flames are batched as point sprites.
+  - QA measured about 130 draw calls (shadow pass included) and about 8k triangles.
+  - It ran about 23–25 fps in *software* (SwiftShader, CPU-only), so a mid-range phone GPU should comfortably clear 30+ fps.
+- **Audio:** Unchanged. Everything is procedural WebAudio (drone, heartbeat, steps, glass, stings), with no samples.
 
 ## 10. Monetization & Brand Tie-In
 
@@ -127,7 +142,7 @@ Four-state finite state machine (`PATROL` → `INVESTIGATE` → `HUNT` → `SEAR
 
 ## 11. Path to App Store & Google Play
 
-The prototype is built in zero-dependency HTML5 Canvas + ES Modules + WebAudio + PWA Manifest so it drops directly into **Capacitor** without rewriting game code:
+The prototype is plain ES modules + locally bundled Three.js (WebGL) + WebAudio + a PWA manifest, so it drops directly into **Capacitor** without rewriting game code:
 
 1. **Wrap with Capacitor:**
    ```bash

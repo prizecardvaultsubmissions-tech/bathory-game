@@ -1,4 +1,4 @@
-const CACHE_NAME = "csejte-blood-ledger-v1";
+const CACHE_NAME = "csejte-blood-ledger-v2-3d";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,7 +7,10 @@ const ASSETS = [
   "./js/audio.js",
   "./js/lore.js",
   "./js/map.js",
-  "./js/lighting.js",
+  "./js/render3d.js",
+  "./js/textures.js",
+  "./js/characters.js",
+  "./js/vendor/three.module.min.js",
   "./js/enemy.js",
   "./js/game.js",
   "./icons/icon-192.png",
@@ -30,9 +33,18 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first so new builds reach phones right away; cache is the offline fallback.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((res) => {
+        if (res && res.ok && new URL(event.request.url).origin === self.location.origin) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

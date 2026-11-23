@@ -1,13 +1,11 @@
 import { SoundEngine } from "./audio.js";
 import { CURSE_ALERTS, TITLE_WHISPERS } from "./lore.js";
 import { createLevel, hasLineOfSight, resolveCircleWallCollision, TILE_SIZE } from "./map.js";
-import { castLanternCone } from "./lighting.js";
+import { Renderer3D } from "./render3d.js";
 import { AI_STATE, CountessAI } from "./enemy.js";
 
 const canvas = document.getElementById("game-canvas");
-const ctx = canvas.getContext("2d");
-const lightCanvas = document.createElement("canvas");
-const lightCtx = lightCanvas.getContext("2d");
+const renderer3d = new Renderer3D(canvas);
 
 const sound = new SoundEngine();
 
@@ -94,19 +92,7 @@ function clearDeathEcho() {
   deathEcho = null;
 }
 
-function resizeCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-  lightCanvas.width = Math.floor(w * dpr);
-  lightCanvas.height = Math.floor(h * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  lightCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
+window.addEventListener("resize", () => renderer3d.resize());
 
 // Title screen flavor
 (function initTitleFlavor() {
@@ -176,6 +162,7 @@ function startNewRun() {
   sound.init();
   setSoundEnabled(chkSound.checked);
   level = createLevel();
+  renderer3d.setLevel(level);
   player = {
     x: level.playerSpawn.x,
     y: level.playerSpawn.y,
@@ -652,287 +639,31 @@ function showTransientPrompt(msg) {
 }
 
 function draw() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  ctx.fillStyle = "#08060a";
-  ctx.fillRect(0, 0, vw, vh);
+  renderer3d.render({
+    player,
+    countess,
+    mode,
+    flareFlash,
+    deathEcho,
+    witching: isWitchingHour
+  });
+}
 
-  if (!level || !player) return;
+// Title-screen backdrop: the castle is built once and the Countess waits by the hall.
+level = createLevel();
+renderer3d.setLevel(level);
+countess = new CountessAI(level.countessSpawn, level.waypoints, isWitchingHour);
 
-  const offsetX = Math.round(vw / 2 - cam.x);
-  const offsetY = Math.round(vh / 2 - cam.y);
-
-  ctx.save();
-  ctx.translate(offsetX, offsetY);
-
-  // 1. Floor & Walls
-  const minTx = Math.max(0, Math.floor((cam.x - vw / 2) / TILE_SIZE) - 1);
-  const maxTx = Math.min(level.cols - 1, Math.ceil((cam.x + vw / 2) / TILE_SIZE) + 1);
-  const minTy = Math.max(0, Math.floor((cam.y - vh / 2) / TILE_SIZE) - 1);
-  const maxTy = Math.min(level.rows - 1, Math.ceil((cam.y + vh / 2) / TILE_SIZE) + 1);
-
-  for (let ty = minTy; ty <= maxTy; ty++) {
-    for (let tx = minTx; tx <= maxTx; tx++) {
-      const cell = level.grid[ty][tx];
-      const wx = tx * TILE_SIZE;
-      const wy = ty * TILE_SIZE;
-
-      if (cell === 1) {
-        // Gothic stone wall block
-        ctx.fillStyle = "#19141d";
-        ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
-        ctx.strokeStyle = "#2d2333";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(wx + 1, wy + 1, TILE_SIZE - 2, TILE_SIZE - 2);
-        ctx.fillStyle = "#241c28";
-        ctx.fillRect(wx + 4, wy + 4, TILE_SIZE - 8, 6);
-      } else if (cell === 2) {
-        // North Portcullis Gate
-        const open = player.pagesFound >= 5;
-        ctx.fillStyle = open ? "#1b281d" : "#240a10";
-        ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
-        ctx.strokeStyle = open ? "#e7c873" : "#c41230";
-        ctx.lineWidth = 2;
-        for (let b = 8; b < TILE_SIZE; b += 10) {
-          ctx.beginPath();
-          ctx.moveTo(wx + b, wy + 3);
-          ctx.lineTo(wx + b, wy + TILE_SIZE - 3);
-          ctx.stroke();
-        }
-      } else {
-        // Flagstone tile
-        const alt = (tx + ty) % 2 === 0;
-        ctx.fillStyle = alt ? "#141118" : "#110e15";
-        ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
-        ctx.strokeStyle = "rgba(255,255,255,0.03)";
-        ctx.strokeRect(wx, wy, TILE_SIZE, TILE_SIZE);
-      }
-    }
-  }
-
-  // 2. Cracked Glass
-  for (const g of level.glass) {
-    ctx.strokeStyle = "rgba(180, 215, 235, 0.55)";
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI * 2 * i) / 6 + 0.3;
-      ctx.beginPath();
-      ctx.moveTo(g.x, g.y);
-      ctx.lineTo(g.x + Math.cos(a) * 13, g.y + Math.sin(a) * 11);
-      ctx.stroke();
-    }
-  }
-
-  // 3. Iron Alcoves
-  for (const a of level.alcoves) {
-    ctx.fillStyle = "#221a20";
-    ctx.fillRect(a.x - 15, a.y - 15, 30, 30);
-    ctx.strokeStyle = "#c9a24d";
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(a.x - 15, a.y - 15, 30, 30);
-    // Vertical iron slit
-    ctx.fillStyle = "#08060a";
-    ctx.fillRect(a.x - 3, a.y - 10, 6, 20);
-  }
-
-  // 4. Braziers
-  for (const b of level.braziers) {
-    const flicker = Math.sin(elapsed * 9 + b.x) * 2.2;
-    ctx.fillStyle = "#3a2b20";
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ff9d3b";
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 6 + flicker * 0.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // 5. Death Echo (fallen lantern from previous death)
-  if (deathEcho) {
-    ctx.fillStyle = "rgba(231, 200, 115, 0.85)";
-    ctx.beginPath();
-    ctx.arc(deathEcho.x, deathEcho.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(212, 28, 59, 0.65)";
-    ctx.beginPath();
-    ctx.arc(deathEcho.x, deathEcho.y, 10 + Math.sin(elapsed * 4) * 2, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  // 6. Ledger Pages
-  for (const p of level.pages) {
-    if (p.collected) continue;
-    const bob = Math.sin(elapsed * 3.2 + p.id) * 2.5;
-    ctx.save();
-    ctx.translate(p.x, p.y + bob);
-    ctx.fillStyle = "#e8dec8";
-    ctx.fillRect(-8, -10, 16, 20);
-    ctx.strokeStyle = "#c9a24d";
-    ctx.lineWidth = 1.2;
-    ctx.strokeRect(-8, -10, 16, 20);
-    // Crimson wax seal dot
-    ctx.fillStyle = "#c41230";
-    ctx.beginPath();
-    ctx.arc(0, 2, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // 7. Countess veil trail & body
-  for (const t of countess.trail) {
-    ctx.fillStyle = `rgba(139, 0, 24, ${(t.life * 0.42).toFixed(2)})`;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, 10 * t.life, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.save();
-  ctx.translate(countess.x, countess.y);
-  ctx.rotate(countess.angle);
-  ctx.fillStyle = countess.state === AI_STATE.STUNNED ? "#7e6e78" : "#400411";
-  ctx.beginPath();
-  ctx.arc(0, 0, countess.radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = countess.state === AI_STATE.HUNT ? "#ff3b5c" : "#c9a24d";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.restore();
-
-  // 8. Player
-  if (!player.hidden) {
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.rotate(player.angle);
-    ctx.fillStyle = "#2b3948";
-    ctx.beginPath();
-    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = player.lanternOn ? "#e7c873" : "#778596";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // Held lantern point
-    ctx.fillStyle = player.lanternOn ? "#ffd678" : "#3a3a44";
-    ctx.beginPath();
-    ctx.arc(player.radius - 1, 0, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // 9. Dust motes
-  for (const m of dustMotes) {
-    ctx.fillStyle = `rgba(232, 222, 200, ${m.alpha})`;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.restore();
-
-  // 10. Darkness & Raycast Lighting Mask
-  lightCtx.save();
-  lightCtx.globalCompositeOperation = "source-over";
-  lightCtx.clearRect(0, 0, vw, vh);
-  const ambientDark = isWitchingHour ? 0.96 : 0.94;
-  lightCtx.fillStyle = `rgba(5, 3, 8, ${ambientDark})`;
-  lightCtx.fillRect(0, 0, vw, vh);
-
-  lightCtx.translate(offsetX, offsetY);
-  lightCtx.globalCompositeOperation = "destination-out";
-
-  // Player close aura
-  const auraR = player.hidden ? 34 : (player.lanternOn ? 62 : 44);
-  const auraGrad = lightCtx.createRadialGradient(player.x, player.y, 4, player.x, player.y, auraR);
-  auraGrad.addColorStop(0, "rgba(0,0,0,0.92)");
-  auraGrad.addColorStop(1, "rgba(0,0,0,0)");
-  lightCtx.fillStyle = auraGrad;
-  lightCtx.beginPath();
-  lightCtx.arc(player.x, player.y, auraR, 0, Math.PI * 2);
-  lightCtx.fill();
-
-  // Raycast Lantern Cone
-  if (player.lanternOn && !player.hidden) {
-    const coneDist = 230 + (player.oil < 15 ? Math.sin(elapsed * 26) * 28 : 0);
-    const poly = castLanternCone(level, player.x, player.y, player.angle, 1.05, coneDist, 48);
-    const coneGrad = lightCtx.createRadialGradient(player.x, player.y, 8, player.x, player.y, coneDist);
-    coneGrad.addColorStop(0, "rgba(0,0,0,0.98)");
-    coneGrad.addColorStop(0.65, "rgba(0,0,0,0.75)");
-    coneGrad.addColorStop(1, "rgba(0,0,0,0)");
-    lightCtx.fillStyle = coneGrad;
-    lightCtx.beginPath();
-    lightCtx.moveTo(poly[0].x, poly[0].y);
-    for (let i = 1; i < poly.length; i++) {
-      lightCtx.lineTo(poly[i].x, poly[i].y);
-    }
-    lightCtx.closePath();
-    lightCtx.fill();
-  }
-
-  // Flare burst cutout
-  if (flareFlash > 0) {
-    const fr = 230 * flareFlash + 40;
-    const fg = lightCtx.createRadialGradient(player.x, player.y, 10, player.x, player.y, fr);
-    fg.addColorStop(0, "rgba(0,0,0,1)");
-    fg.addColorStop(1, "rgba(0,0,0,0)");
-    lightCtx.fillStyle = fg;
-    lightCtx.beginPath();
-    lightCtx.arc(player.x, player.y, fr, 0, Math.PI * 2);
-    lightCtx.fill();
-  }
-
-  // Brazier light cutouts
-  for (const b of level.braziers) {
-    const br = 88 + Math.sin(elapsed * 8 + b.x) * 6;
-    const bg = lightCtx.createRadialGradient(b.x, b.y, 6, b.x, b.y, br);
-    bg.addColorStop(0, "rgba(0,0,0,0.95)");
-    bg.addColorStop(1, "rgba(0,0,0,0)");
-    lightCtx.fillStyle = bg;
-    lightCtx.beginPath();
-    lightCtx.arc(b.x, b.y, br, 0, Math.PI * 2);
-    lightCtx.fill();
-  }
-
-  // Death Echo faint cutout
-  if (deathEcho) {
-    const dg = lightCtx.createRadialGradient(deathEcho.x, deathEcho.y, 2, deathEcho.x, deathEcho.y, 44);
-    dg.addColorStop(0, "rgba(0,0,0,0.85)");
-    dg.addColorStop(1, "rgba(0,0,0,0)");
-    lightCtx.fillStyle = dg;
-    lightCtx.beginPath();
-    lightCtx.arc(deathEcho.x, deathEcho.y, 44, 0, Math.PI * 2);
-    lightCtx.fill();
-  }
-
-  // Exit Gate beacon once unsealed
-  if (player.pagesFound >= 5) {
-    const eg = lightCtx.createRadialGradient(level.exitTile.x, level.exitTile.y, 6, level.exitTile.x, level.exitTile.y, 90);
-    eg.addColorStop(0, "rgba(0,0,0,0.95)");
-    eg.addColorStop(1, "rgba(0,0,0,0)");
-    lightCtx.fillStyle = eg;
-    lightCtx.beginPath();
-    lightCtx.arc(level.exitTile.x, level.exitTile.y, 90, 0, Math.PI * 2);
-    lightCtx.fill();
-  }
-
-  lightCtx.restore();
-
-  // Composite darkness mask onto main canvas
-  ctx.drawImage(lightCanvas, 0, 0, vw, vh);
-
-  // 11. Countess glowing crimson eyes above darkness when in line-of-sight!
-  const dC = Math.hypot(countess.x - player.x, countess.y - player.y);
-  if (dC < 290 && hasLineOfSight(level, player.x, player.y, countess.x, countess.y)) {
-    ctx.save();
-    ctx.translate(offsetX + countess.x, offsetY + countess.y);
-    ctx.rotate(countess.angle);
-    ctx.fillStyle = countess.state === AI_STATE.STUNNED ? "#e7c873" : "#ff284c";
-    ctx.shadowColor = "#ff1f44";
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(5, -4, 2.3, 0, Math.PI * 2);
-    ctx.arc(5, 4, 2.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+// QA hook (only with ?qa in the URL) so automated tests can stage encounters.
+if (new URLSearchParams(location.search).has("qa")) {
+  window.__qa = {
+    get mode() { return mode; },
+    get player() { return player; },
+    get countess() { return countess; },
+    get level() { return level; },
+    stats: () => renderer3d.stats(),
+    place(obj, tx, ty) { obj.x = (tx + 0.5) * TILE_SIZE; obj.y = (ty + 0.5) * TILE_SIZE; }
+  };
 }
 
 let lastFrame = performance.now();
