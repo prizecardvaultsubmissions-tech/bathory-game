@@ -127,5 +127,116 @@ export function buildCountess(T, psx) {
     arms.push(sh);
   }
 
-  return { root, body, skirt, arms, eyeMat };
+  const mats = [gown, gold, ruff, pale, hairM, face];
+  return { root, body, skirt, arms, eyeMat, mats };
+}
+
+// ---------------- Weapons (held in the left hand, extending along -Y of the arm) ----------------
+export function buildWeapon(id, T, psx) {
+  const g = new THREE.Group();
+  const silver = lambert("w-silver", { color: 0xd8dde6, emissive: 0x30343c, flatShading: true }, psx);
+  const goldW = lambert("w-gold", { color: 0xc9a24d, emissive: 0x2a1804, flatShading: true }, psx);
+  const leather = lambert("w-leather", { color: 0x4a2c1c, flatShading: true }, psx);
+  const ironW = lambert("w-iron", { map: T.iron, flatShading: true }, psx);
+  const wood = lambert("w-wood", { map: T.wood, flatShading: true }, psx);
+  if (id === "dagger") {
+    add(g, box(0.06, 0.16, 0.06), leather, 0, 0.02, 0);
+    add(g, box(0.22, 0.04, 0.06), goldW, 0, -0.07, 0);
+    add(g, box(0.07, 0.42, 0.025), silver, 0, -0.3, 0);
+    add(g, new THREE.ConeGeometry(0.04, 0.12, 4), silver, 0, -0.57, 0).rotation.x = Math.PI;
+  } else if (id === "mace") {
+    add(g, box(0.07, 0.75, 0.07), wood, 0, -0.25, 0);
+    add(g, box(0.1, 0.06, 0.1), goldW, 0, 0.1, 0);
+    add(g, box(0.24, 0.26, 0.24), ironW, 0, -0.68, 0);
+    for (const [x, z] of [[0.14, 0], [-0.14, 0], [0, 0.14], [0, -0.14]]) {
+      const sp = add(g, new THREE.ConeGeometry(0.05, 0.14, 4), ironW, x, -0.68, z);
+      sp.rotation.z = x > 0 ? -Math.PI / 2 : x < 0 ? Math.PI / 2 : 0;
+      sp.rotation.x = z > 0 ? Math.PI / 2 : z < 0 ? -Math.PI / 2 : 0;
+    }
+    add(g, box(0.27, 0.05, 0.27), goldW, 0, -0.55, 0);
+  } else if (id === "crossbow") {
+    // stock points forward (-Y), bow limbs across X
+    add(g, box(0.1, 0.62, 0.1), wood, 0, -0.18, 0.04);
+    add(g, box(0.7, 0.05, 0.06), ironW, 0, -0.42, 0.04);
+    add(g, box(0.7, 0.015, 0.015), silver, 0, -0.34, 0.06);
+    add(g, box(0.03, 0.4, 0.03), silver, 0, -0.42, 0.11); // loaded bolt
+    add(g, box(0.06, 0.08, 0.06), goldW, 0, 0.1, 0.04);
+  } else if (id === "staff") {
+    add(g, box(0.07, 1.3, 0.07), wood, 0, -0.35, 0);
+    add(g, box(0.12, 0.2, 0.12), ironW, 0, -1.02, 0);
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xffa040 });
+    psx(flameMat);
+    const f = add(g, new THREE.ConeGeometry(0.11, 0.32, 5), flameMat, 0, -1.25, 0, false);
+    f.rotation.x = Math.PI;
+    g.userData.flame = f;
+  }
+  return g;
+}
+
+// ---------------- Monsters (per-instance materials so they can flash & dissolve) ----------------
+function mm(opts, psx) {
+  const m = new THREE.MeshLambertMaterial({ flatShading: true, transparent: false, ...opts });
+  psx(m);
+  return m;
+}
+
+export function buildMonster(kind, T, psx) {
+  const root = new THREE.Group();
+  const body = pivot(root, 0, 0, 0);
+  const mats = [];
+  const M = (o) => { const m = mm(o, psx); mats.push(m); return m; };
+  const rig = { root, body, mats, legs: null, arms: [], limbs: [], bats: [] };
+
+  if (kind === "ghoul") {
+    const skin = M({ color: 0x90a07a });
+    const rags = M({ map: T.rags, alphaTest: 0.5 });
+    const face = M({ map: T.ghoulSkin });
+    const torso = pivot(body, 0, 0.75, 0);
+    torso.rotation.x = 0.45; // hunched
+    add(torso, box(0.52, 0.62, 0.34), rags, 0, 0.3, 0);
+    add(torso, box(0.34, 0.34, 0.32), [skin, skin, skin, skin, face, skin], 0, 0.78, 0.08);
+    rig.legs = [];
+    for (const sx of [-0.13, 0.13]) {
+      const hip = pivot(body, sx, 0.75, 0);
+      add(hip, box(0.16, 0.72, 0.18), rags, 0, -0.36, 0);
+      rig.legs.push(hip);
+    }
+    for (const sx of [-0.34, 0.34]) {
+      const sh = pivot(torso, sx, 0.55, 0);
+      add(sh, box(0.13, 0.78, 0.14), skin, 0, -0.39, 0);
+      add(sh, box(0.16, 0.14, 0.16), skin, 0, -0.82, 0.02);
+      rig.arms.push(sh);
+    }
+    rig.torso = torso;
+    rig.eyeY = 1.48; rig.eyeZ = 0.45; rig.eyeColor = 0xffe27a; rig.barY = 1.95;
+  } else if (kind === "maiden") {
+    const dress = M({ map: T.shift });
+    const pale = M({ color: 0xe6dcd6 });
+    const hair = M({ color: 0x120a0e });
+    const face = M({ map: T.maidenFace });
+    add(body, box(0.42, 0.26, 0.86), dress, 0, 0.5, 0);
+    add(body, box(0.32, 0.32, 0.3), [hair, hair, hair, pale, face, hair], 0, 0.62, 0.55);
+    add(body, box(0.36, 0.5, 0.08), hair, 0, 0.42, 0.72); // hair curtain hanging
+    for (const [sx, sz] of [[-0.24, 0.32], [0.24, 0.32], [-0.24, -0.3], [0.24, -0.3]]) {
+      const hip = pivot(body, sx, 0.55, sz);
+      const upper = add(hip, box(0.08, 0.5, 0.08), pale, sx > 0 ? 0.12 : -0.12, -0.18, 0);
+      upper.rotation.z = sx > 0 ? 0.7 : -0.7;
+      rig.limbs.push(hip);
+    }
+    rig.eyeY = 0.64; rig.eyeZ = 0.72; rig.eyeColor = 0xff2448; rig.barY = 1.15;
+  } else {
+    const fur = M({ color: 0x2a1c24 });
+    const wing = M({ color: 0x4a2030, side: THREE.DoubleSide });
+    for (let i = 0; i < 7; i++) {
+      const b = pivot(body, 0, 0, 0);
+      add(b, box(0.14, 0.12, 0.2), fur, 0, 0, 0);
+      const wl = pivot(b, -0.07, 0, 0);
+      add(wl, box(0.32, 0.02, 0.16), wing, -0.16, 0, 0);
+      const wr = pivot(b, 0.07, 0, 0);
+      add(wr, box(0.32, 0.02, 0.16), wing, 0.16, 0, 0);
+      rig.bats.push({ b, wl, wr, phase: i * 0.9, r: 0.25 + (i % 3) * 0.2, h: 1.0 + (i % 4) * 0.22 });
+    }
+    rig.eyeY = 1.3; rig.eyeZ = 0.1; rig.eyeColor = 0xff3030; rig.barY = 2.0;
+  }
+  return rig;
 }

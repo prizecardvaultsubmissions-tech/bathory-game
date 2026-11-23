@@ -24,66 +24,101 @@ You install an unarchived horror build recovered from an estate drive—a top-do
 
 ---
 
-## 3. Core Gameplay Loop
+## 3. Core Gameplay Loop (v0.3 "Combat & Mirrors")
 
-1. **Explore & Illuminate:** Sweep a real-time raycast lantern cone across darkened castle wings to spot ledger pages, alcoves, cracked-glass noise traps, and patrols.
-2. **Manage Light vs. Sanity:**
-   - Keep the **Lantern Lit** to maintain Sanity and see clearly, at the cost of Lamp Oil and high visibility to the Countess.
-   - **Douse the Lantern** to shrink your detection profile by ~75% and slip past patrols—while Darkness slowly drains Sanity.
-   - Rest at **Wall Braziers** to recover Lamp Oil and steady your Sanity.
-3. **Evade & Hide:** Slip into **Iron Alcoves / Wardrobes** before entering the Countess's sightline, or trigger an emergency **Lamp Flare** (20% oil, brief 360° stun) if cornered.
-4. **Recover the 5 Ledger Pages:** Each page pauses enemies briefly while you read an original piece of Báthory lore and breaks one of the five blood seals on the exit.
-5. **Unseal & Escape:** Reach the **North Courtyard Gate** once all five seals break. Dying leaves a **Death Echo** (your dropped lantern) on the map for your next run.
+1. **Choose Your Arms:** Every run starts at the *Armory of Csejte*. Pick one of four original weapons (table below). Your pick is remembered, and RETRY keeps it.
+2. **Explore Six Wings:** The castle is now one large connected map, about 5x the v0.2 footprint (58x46 = 2,668 tiles vs. 26x20 = 520; 1,584 walkable vs. 359). It covers the Outer Ward, the Chapel of St. Ladislaus, the Kitchens & Cellars, the Great Hall, the Torture Gallery and the North Gate Court. Each wing has its own floor, dressing and fixed cinematic camera angle, plus an area title card as you enter.
+3. **Fight Her Servants:** Monsters rise slowly from the mist at spawn points far from you and out of sight. Cut them down with your weapon.
+4. **Never Fight Her:** The Countess cannot be harmed. A hit only makes her recoil for a split second. If she catches you in the open, you die, unless you carry a mirror.
+5. **Collect Mirrors:** Walk over mirror pickups to add them to your inventory. A mirror freezes her in glass, and better mirrors hold her longer.
+6. **Manage Light, Sanity, Oil and Health:** Lantern vs. darkness works as before. Braziers now also slowly mend Health.
+7. **Recover the 5 Ledger Pages** spread across the wings, then escape through the **North Gate**. Dying leaves a **Death Echo** (your dropped lantern).
+
+### Weapons (pick one per run)
+| Weapon | Damage | Speed | Reach | Special |
+| :--- | :--- | :--- | :--- | :--- |
+| **Silver Dagger** | 14 | 0.30s | short | Fastest attacks |
+| **Blessed Iron Mace** | 34 | 0.95s | medium, wide arc | Huge knockback; longest stagger on the Countess |
+| **Silver Crossbow** | 24 / bolt | 0.75s | ranged (~11 tiles) | 14 bolts (max 24). Bolt bundles in the castle give +6. Out of bolts, it bashes for 6. |
+| **Torch Staff** | 15 | 0.55s | long | Sets servants burning (5 dmg/s for 4s) |
+
+Attacks auto-aim at the nearest servant in reach. Hold **ATTACK** to keep swinging. Every hit gives a white flash, sparks, blood particles, knockback, a hit sound and a light screen shake.
+
+### Monsters (the Countess's risen servants)
+| Monster | HP | Speed | Damage | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **Servant Ghoul** | 46 | slow | 12 | Tough shambler; the only type for the first ~45s |
+| **Blood Maiden** | 28 | very fast | 9 | Fragile but closes distance quickly |
+| **Bat Swarm** | 20 | fast, erratic | 5 | Each bite also drains 6% Lamp Oil |
+
+- **AI:** RISE (0.9s from mist) → WANDER → CHASE (they spot you more easily while your lantern is lit) → WINDUP telegraph → strike → cooldown. Hiding in an alcove makes you invisible to them too.
+- **Spawner:** The first rise happens about 9s in. After that, one rises every `max(14, 32 − 0.08·t) + rand(0–8)` seconds, at spawn points more than 11 tiles away and out of line of sight. At most `min(8, 3 + ⌊t/60⌋)` are active at once. Maidens and bats join after ~45s, and after 2.5 min they sometimes come in pairs.
+- **Death:** a dissolve into mist. 18% of kills restore +6 Health and +8 Sanity.
+
+### Mirrors (freeze the Countess)
+| Tier | Freeze | Count in castle | Extra |
+| :--- | :--- | :--- | :--- |
+| ◐ Cracked Hand Mirror | 3s | 6 | |
+| ◯ Silver Vanity Mirror | 6s | 4 | |
+| ✦ Gilded Venetian Mirror | 10s | 3 | |
+| ◆ Obsidian Scrying Mirror | 15s | 1 (Torture Gallery) | Also blasts away nearby servants (repel + 18 dmg) |
+
+- **Manual:** Tap **MIRROR** while she is within ~7 tiles, or within ~11 tiles if you can see her. It always uses the best mirror you hold.
+- **Automatic last-ditch save:** If she catches you while you're not hidden and you hold any mirror, the best one shatters, she freezes, and you're shoved free.
+- **Freeze effects:** an ice-glass shell and gold frame around her, a pale glow, a blue-shifted screen and a countdown banner that turns red in the last 1.5s. When she thaws, she searches where she stood.
+
+### Health
+100 HP. Monster strikes deal damage, with a short invulnerability window and knockback. Braziers mend +4 HP/s. Reaching 0 HP ends the run with a monster-specific death line.
 
 ---
 
 ## 4. Mobile Touchscreen Controls
 
-Designed for one-handed or two-thumb portrait/landscape phone play (`touch-action: none`, multi-touch pointer tracking):
+Designed for two-thumb portrait phone play (`touch-action: none`, multi-touch pointer tracking):
 
 | Input | Zone | Action |
 | :--- | :--- | :--- |
-| **Virtual Analog Stick** | Left lower screen (floating on touch) | Smooth 360° movement; slight drag moves silently, full tilt moves at normal pace. |
-| **HIDE / READ / EXIT** | Bottom-right (Primary gold ring) | Context-sensitive: enters/exits nearby Iron Alcove, reads Ledger Page, or opens unsealed Gate. |
-| **DOUSE / LIGHT** | Right-mid (Amber/obsidian button) | Toggles lantern flame ON/OFF for stealth. |
-| **FLARE** | Right-upper (Crimson button, 8s CD) | Consumes 20% oil for a blinding flash that staggers the Countess for 1.5s if close. |
-| **HUD Top Bar** | Top edge (safe-area aware) | Pages (`0/5`), Sanity bar, Lamp Oil bar, Stealth state (`UNSEEN` / `HIDDEN` / `HUNTED`), Audio/Pause. |
+| **Virtual Analog Stick** | Bottom-left | 360° movement; a slight drag moves quietly. |
+| **ATTACK** (big crimson) | Bottom-right corner | Swing or fire; hold to repeat; auto-aims at the nearest servant. |
+| **SEARCH / HIDE / READ / EXIT / ESCAPE** | Left of ATTACK | Context action. |
+| **MIRROR** | Above ATTACK | Freezes the Countess with the best mirror held. The subtitle shows that mirror's seconds. |
+| **FLARE** | Diagonal | 20% oil; stuns her if close, scorches nearby servants. |
+| **DOUSE** | Top of cluster | Lantern on/off. |
+| **HUD** | Top | Ledger pages, stealth state, weapon (+ bolts), Health/Sanity/Oil bars, mirror inventory chips, minimap (pages gold, gate, you; she appears only when hunting you or frozen), sound/pause. |
 
-*(Desktop keyboard fallback: `WASD`/Arrows to move, `E`/`Space` to Hide/Interact, `F` to Douse, `Q` to Flare.)*
+*(Keyboard: `WASD`/Arrows move, `Space`/`J` attack, `E` act, `R` mirror, `F` douse, `Q` flare, `Esc` pause.)*
 
 ---
 
-## 5. Five-Level Campaign — Csejte (Čachtice) Castle
+## 5. Campaign: Csejte (Čachtice) Castle
 
-1. **Level 1 — The Outer Ward & Watchtower *(Playable in Prototype)***  
-   Rain-slicked battlements, guardhouse ruins, 3 wall braziers, 4 hiding alcoves, cracked-glass sound traps, and 5 Ledger Pages guarding the North Portcullis. Introduces the Blood Countess patrol and stealth basics.
-2. **Level 2 — The Crimson Gallery & Banquet Hall**  
-   Long mirrored corridors and flickering candelabra zones. Introduces *creaking oak floorboards* (force slow-walk) and *Silver Mirrors* that reveal hidden wall switches only inside your lantern cone.
-3. **Level 3 — The Silver Cisterns & Bathhouse**  
-   Heavy steam reduces lantern range by 35%; ankle-deep water emits ripples that pull nearby patrols. Introduces *Dorko's Wraith*, an accomplice spirit whose shriek alerts the Countess across rooms.
-4. **Level 4 — The Torture Undercroft & Iron Cellar**  
-   Claustrophobic dungeon maze with pressure-plate iron grates, decoy *Iron Virgin* silhouettes, and accelerated Sanity drain requiring brazier-hopping routes.
-5. **Level 5 — The Brick-Walled Tower (1611–1614)**  
-   Vertical multi-ring chamber representing Báthory's final sealed room. Players must ignite four corner masonry seals while the Countess enters permanent *Blood Moon Hunt* phases as each seal locks.
+**v0.3 playable map: "The Castle Wings"**, one continuous level made of six wings:
+- **Outer Ward:** the start. Cobbled courtyard, crates, a well, braziers.
+- **Chapel of St. Ladislaus:** pews, altar, stained glass.
+- **Kitchens & Cellars:** tables, barrels, a cauldron; a cellar stair leads up to the North Court.
+- **Great Hall:** the throne, banquet tables, pillars. The Countess starts here.
+- **Torture Gallery:** cages and racks; holds the only Obsidian mirror.
+- **North Gate Court:** statues and the sealed North Gate exit.
+
+The map holds 5 pages, 10 alcoves, 12 braziers, 7 cracked-glass traps, 14 mirrors, 8 bolt bundles and 14 monster spawn points.
+
+Future chapters (design targets): the Silver Cisterns & Bathhouse (steam halves lantern range), the Iron Undercroft (pressure plates) and the Brick-Walled Tower finale.
 
 ---
 
 ## 6. Enemies & Countess AI
 
 ### Primary Stalker: Elizabeth Báthory (The Blood Countess)
-Four-state finite state machine (`PATROL` → `INVESTIGATE` → `HUNT` → `SEARCH`):
-- **`PATROL`:** Walks castle patrol loops at measured speed; emits a soft crimson lantern glow and distance-scaled heartbeat audio.
-- **`INVESTIGATE`:** Triggered when the player steps on cracked glass, triggers a Flare out of stun range, or lingers near a noisy gate. Moves to the sound coordinate and scans.
-- **`HUNT`:** Triggered when the player enters her line-of-sight cone (extended range if player's lantern is lit; very short range if doused). Accelerates, widens crimson screen vignette, and pursues directly.
-- **`SEARCH`:** When line of sight is broken or the player hides out of sight in an alcove, she sweeps around the player's last seen position for several seconds before returning to `PATROL`.
-- **`STUNNED`:** Triggered for 1.5s by a close-range **Lamp Flare**, giving a narrow window to break line of sight and hide.
+**Invulnerable.** Her FSM states are `PATROL` → `INVESTIGATE` → `HUNT` → `SEARCH`, plus `STUNNED` and `FROZEN`:
+- **`PATROL`:** walks between 15 waypoints and favors the one nearest you half the time. If you are more than 22 tiles away for 22s, she *re-manifests* somewhere nearer, out of sight ("You hear silk dragging over stone…").
+- **`INVESTIGATE`:** goes to noises (cracked glass, distant flares).
+- **`HUNT`:** you're in her sight cone (long range when your lantern is lit, short when doused). She is fast and uses BFS pathing around walls.
+- **`SEARCH`:** sweeps your last known position.
+- **`STUNNED`:** 1.7s from a close flare, or a brief stagger from a weapon hit (dagger 0.25s up to mace 0.75s).
+- **`FROZEN`:** 3–15s from a mirror. She is fully immobile and cannot catch you.
 
-### Supporting Threats (Levels 2–5)
-- **Dorko's Wraith (Accomplice):** Floats slowly; drains Lamp Oil if within 2 tiles and shrieks to pull the Countess into `INVESTIGATE`.
-- **Ficzko the Mute (Gatekeeper):** Blind; ignores lantern light completely, reacts strictly to footsteps and door/glass noise.
-- **Mirror Double:** Appears in Level 2/5 mirrors; freezes when illuminated directly, stalks when your beam turns away.
-
----
+### Servants
+See the monster table in section 3. These are original designs: a hunched ghoul in servant rags, a pale maiden in a shift, and a swarm of bats.
 
 ## 7. Sanity & Light Mechanics
 

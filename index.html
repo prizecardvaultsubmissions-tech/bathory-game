@@ -38,9 +38,14 @@
           <span id="hud-pages" class="pill-value gold">0 / 5</span>
         </div>
         <div id="hud-status" class="hud-pill status-pill unseen">UNSEEN</div>
+        <div id="hud-weapon" class="hud-pill weapon-pill"><span id="hud-weapon-name">DAGGER</span><span id="hud-ammo" class="pill-value gold"></span></div>
       </div>
 
       <div class="hud-bars">
+        <div class="bar-group">
+          <div class="bar-label"><span>HEALTH</span><span id="hud-health-val">100</span></div>
+          <div class="bar-track"><div id="hud-health-bar" class="bar-fill health"></div></div>
+        </div>
         <div class="bar-group">
           <div class="bar-label"><span>SANITY</span><span id="hud-sanity-val">100%</span></div>
           <div class="bar-track"><div id="hud-sanity-bar" class="bar-fill sanity"></div></div>
@@ -49,13 +54,25 @@
           <div class="bar-label"><span>LAMP OIL</span><span id="hud-oil-val">100%</span></div>
           <div class="bar-track"><div id="hud-oil-bar" class="bar-fill oil"></div></div>
         </div>
+        <div id="hud-mirrors" class="mirror-row" aria-label="Mirrors held"></div>
       </div>
 
       <div class="hud-actions">
-        <button id="btn-mute" class="icon-btn" aria-label="Toggle Sound" title="Toggle Sound">🔊</button>
-        <button id="btn-pause" class="icon-btn" aria-label="Pause" title="Pause">☰</button>
+        <div class="hud-action-row">
+          <button id="btn-mute" class="icon-btn" aria-label="Toggle Sound" title="Toggle Sound">🔊</button>
+          <button id="btn-pause" class="icon-btn" aria-label="Pause" title="Pause">☰</button>
+        </div>
+        <canvas id="minimap" width="58" height="46" aria-label="Castle map"></canvas>
       </div>
     </header>
+
+    <div id="freeze-banner" class="hidden">
+      <div class="freeze-title" id="freeze-title">COUNTESS FROZEN</div>
+      <div class="freeze-time" id="freeze-time">0.0</div>
+      <div class="freeze-track"><div id="freeze-fill"></div></div>
+    </div>
+    <div id="toast" class="hidden"></div>
+    <div id="area-title" class="hidden"></div>
 
     <!-- Context prompt banner -->
     <div id="prompt-banner" class="hidden"></div>
@@ -70,17 +87,25 @@
       </div>
 
       <div id="action-cluster">
-        <button id="btn-flare" class="action-btn crimson" type="button">
-          <span class="btn-title">FLARE</span>
-          <span id="flare-cd" class="btn-sub">READY</span>
-        </button>
-        <button id="btn-douse" class="action-btn amber" type="button">
-          <span class="btn-title">DOUSE</span>
-          <span id="douse-state" class="btn-sub">LIT</span>
+        <button id="btn-attack" class="action-btn attack" type="button" aria-label="Attack">
+          <span class="btn-icon">⚔</span>
+          <span class="btn-title">ATTACK</span>
         </button>
         <button id="btn-interact" class="action-btn gold primary" type="button">
           <span id="interact-label" class="btn-title">SEARCH</span>
           <span class="btn-sub">ACT</span>
+        </button>
+        <button id="btn-mirror" class="action-btn mirror" type="button">
+          <span class="btn-title">MIRROR</span>
+          <span id="mirror-sub" class="btn-sub">NONE</span>
+        </button>
+        <button id="btn-flare" class="action-btn crimson small" type="button">
+          <span class="btn-title">FLARE</span>
+          <span id="flare-cd" class="btn-sub">READY</span>
+        </button>
+        <button id="btn-douse" class="action-btn amber small" type="button">
+          <span class="btn-title">DOUSE</span>
+          <span id="douse-state" class="btn-sub">LIT</span>
         </button>
       </div>
     </div>
@@ -92,7 +117,7 @@
         <div class="build-tag">CSEJTE_DEV_09 // HOUSE OF HORRORS</div>
         <h1>CSEJTE:<br/><span>BLOOD LEDGER</span></h1>
         <p class="subtitle">
-          A cursed 16th-century castle build. Recover all five torn ledger pages, evade the Blood Countess in the dark, and unseal the Outer Gate.
+          Six wings of a cursed castle. Arm yourself, cut down her risen servants, gather mirrors, and find five ledger pages before the Blood Countess finds you.
         </p>
 
         <div id="witching-badge" class="witching-badge hidden">
@@ -117,8 +142,23 @@
           </label>
         </div>
         <p class="curse-note">
-          Curse Alerts are 100% harmless &amp; opt-in local whispers. Keyboard fallback: WASD, F (Douse), E (Act/Hide), Q (Flare).
+          Curse Alerts are 100% harmless &amp; opt-in local whispers. Keys: WASD move · Space attack · E act · F douse · Q flare · R mirror.
         </p>
+      </div>
+    </section>
+
+    <!-- WEAPON SELECT -->
+    <section id="screen-weapon" class="overlay-screen hidden">
+      <div class="card-frame weapon-card">
+        <div class="build-tag">CHOOSE YOUR ARMS</div>
+        <h2>THE ARMORY OF CSEJTE</h2>
+        <p class="subtitle small">Weapons cut down her servants. Nothing you carry can wound the Countess; only mirrors hold her.</p>
+        <div id="weapon-grid" class="weapon-grid"></div>
+        <p id="weapon-blurb" class="weapon-blurb"></p>
+        <div class="title-buttons">
+          <button id="btn-begin" class="gothic-btn primary-cta" type="button">BEGIN</button>
+          <button id="btn-weapon-back" class="gothic-btn secondary-cta" type="button">BACK</button>
+        </div>
       </div>
     </section>
 
@@ -127,11 +167,14 @@
       <div class="card-frame modal-card">
         <h2>SURVIVAL CODEX</h2>
         <ul class="codex-list">
-          <li><strong>Lantern &amp; Stealth:</strong> Your beam reveals pages and traps—but the Countess sees light from afar. Tap <em>DOUSE</em> to vanish in shadow, though darkness drains <strong>Sanity</strong>.</li>
-          <li><strong>Iron Alcoves:</strong> Step into recessed stone alcoves and tap <em>HIDE</em> to conceal yourself while she passes. Don't let her watch you enter.</li>
-          <li><strong>Wall Braziers:</strong> Stand near glowing braziers to refill <strong>Lamp Oil</strong> and steady your <strong>Sanity</strong>.</li>
-          <li><strong>Lamp Flare:</strong> Emergency 360° burst (costs 20% oil). Stuns the Countess for 1.5s if she's close.</li>
-          <li><strong>Cracked Glass:</strong> Stepping on shattered glass rings through the ward and draws her to investigate.</li>
+          <li><strong>Attack:</strong> Hold the big <em>ATTACK</em> button. You auto-turn toward the nearest servant in reach. Ghouls, Blood Maidens and Bat Swarms rise from the mist over time, more as the night drags on.</li>
+          <li><strong>The Countess:</strong> She cannot be harmed. Blows only make her recoil. If she catches you in the open, you die.</li>
+          <li><strong>Mirrors:</strong> Pick them up as you walk. Tap <em>MIRROR</em> when she's close to freeze her, or one shatters automatically if she catches you. Cracked 3s · Silver 6s · Gilded 10s · Obsidian 15s (also repels monsters).</li>
+          <li><strong>Lantern &amp; Stealth:</strong> Light lets you see but she sees it too. <em>DOUSE</em> to vanish, though darkness drains <strong>Sanity</strong>.</li>
+          <li><strong>Iron Alcoves:</strong> Tap <em>HIDE</em> to vanish from her and the monsters alike.</li>
+          <li><strong>Braziers:</strong> Refill <strong>Lamp Oil</strong>, <strong>Sanity</strong> and slowly mend <strong>Health</strong>.</li>
+          <li><strong>Flare:</strong> 360° burst (20% oil) that stuns her if close. <strong>Cracked glass</strong> rings out and draws her near.</li>
+          <li><strong>Goal:</strong> Five ledger pages lie across six wings. Find them all, then escape through the North Gate. The map (top right) marks pages in gold.</li>
         </ul>
         <div class="title-buttons">
           <button id="btn-help-close" class="gothic-btn primary-cta" type="button">RESUME</button>
@@ -164,10 +207,13 @@
         <div class="stats-grid">
           <div class="stat-box"><span>PAGES FOUND</span><strong id="death-pages">0 / 5</strong></div>
           <div class="stat-box"><span>SURVIVED</span><strong id="death-time">0:00</strong></div>
+          <div class="stat-box"><span>SERVANTS SLAIN</span><strong id="death-kills">0</strong></div>
+          <div class="stat-box"><span>MIRRORS USED</span><strong id="death-mirrors">0</strong></div>
         </div>
         <p class="echo-note">Your fallen lantern stays lit on the stones for your next attempt.</p>
         <div class="title-buttons">
           <button id="btn-retry" class="gothic-btn primary-cta" type="button">RISE AGAIN</button>
+          <button id="btn-death-weapon" class="gothic-btn secondary-cta" type="button">CHANGE WEAPON</button>
           <button id="btn-death-title" class="gothic-btn secondary-cta" type="button">TITLE SCREEN</button>
         </div>
       </div>
@@ -185,11 +231,13 @@
         <div class="stats-grid">
           <div class="stat-box"><span>ESCAPE TIME</span><strong id="win-time">0:00</strong></div>
           <div class="stat-box"><span>SANITY LEFT</span><strong id="win-sanity">100%</strong></div>
+          <div class="stat-box"><span>SERVANTS SLAIN</span><strong id="win-kills">0</strong></div>
+          <div class="stat-box"><span>WEAPON</span><strong id="win-weapon">—</strong></div>
         </div>
         <div class="relic-card">
           <div class="relic-foil">FOIL SEAL UNLOCKED</div>
           <div class="relic-name">Elizabeth Báthory — The Csejte Ledger</div>
-          <div class="relic-sub">Level 1 Complete • Prototype Build v0.1</div>
+          <div class="relic-sub">Csejte Castle Escaped • Prototype Build v0.3</div>
         </div>
         <div class="title-buttons">
           <button id="btn-play-again" class="gothic-btn primary-cta" type="button">PLAY AGAIN</button>

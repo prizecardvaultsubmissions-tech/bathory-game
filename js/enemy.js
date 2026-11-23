@@ -5,11 +5,13 @@ export const AI_STATE = {
   INVESTIGATE: "INVESTIGATE",
   HUNT: "HUNT",
   SEARCH: "SEARCH",
-  STUNNED: "STUNNED"
+  STUNNED: "STUNNED",
+  FROZEN: "FROZEN"
 };
 
+// The Blood Countess. Invulnerable: weapons only stagger her, mirrors freeze her.
 export class CountessAI {
-  constructor(spawn, waypoints, witchingHour = false) {
+  constructor(spawn, waypoints, witchingHour = false, pathing = null) {
     this.x = spawn.x;
     this.y = spawn.y;
     this.radius = 13;
@@ -21,31 +23,65 @@ export class CountessAI {
     this.targetY = waypoints[0].y;
     this.stateTimer = 0;
     this.stunTimer = 0;
+    this.freezeTimer = 0;
+    this.freezeTotal = 0;
     this.witchingHour = witchingHour;
-    this.trail = [];
-    this.trailTimer = 0;
+    this.pathing = pathing;
+    this.farTimer = 0;
     this.stuckTimer = 0;
     this.lastPos = { x: spawn.x, y: spawn.y };
   }
 
   alertAt(x, y) {
-    if (this.state === AI_STATE.HUNT || this.state === AI_STATE.STUNNED) return;
+    if ([AI_STATE.HUNT, AI_STATE.STUNNED, AI_STATE.FROZEN].includes(this.state)) return;
     this.state = AI_STATE.INVESTIGATE;
     this.targetX = x;
     this.targetY = y;
-    this.stateTimer = 5.5;
+    this.stateTimer = 7;
   }
 
   stun(duration = 1.6) {
+    if (this.state === AI_STATE.FROZEN) return;
     this.state = AI_STATE.STUNNED;
     this.stunTimer = duration;
   }
 
+  // Weapon hits: a brief recoil, never damage.
+  stagger(duration) {
+    if (this.state === AI_STATE.FROZEN || this.state === AI_STATE.STUNNED) return;
+    this.state = AI_STATE.STUNNED;
+    this.stunTimer = duration;
+  }
+
+  freeze(seconds) {
+    this.state = AI_STATE.FROZEN;
+    this.freezeTimer = seconds;
+    this.freezeTotal = seconds;
+  }
+
+  get frozen() {
+    return this.state === AI_STATE.FROZEN;
+  }
+
   update(dt, level, player, callbacks = {}) {
+    if (this.state === AI_STATE.FROZEN) {
+      this.freezeTimer -= dt;
+      if (this.freezeTimer <= 0) {
+        this.freezeTimer = 0;
+        this.state = AI_STATE.SEARCH;
+        this.targetX = this.x;
+        this.targetY = this.y;
+        this.stateTimer = 2.5;
+        if (callbacks.onThaw) callbacks.onThaw();
+      }
+      return;
+    }
     if (this.state === AI_STATE.STUNNED) {
       this.stunTimer -= dt;
       if (this.stunTimer <= 0) {
         this.state = AI_STATE.SEARCH;
+        this.targetX = player.x;
+        this.targetY = player.y;
         this.stateTimer = 3.2;
       }
       return;
@@ -55,26 +91,20 @@ export class CountessAI {
     const dyP = player.y - this.y;
     const distToPlayer = Math.hypot(dxP, dyP);
 
-    // Detection distance depends on lantern & hiding
     let detectDist = player.lanternOn ? 255 : 88;
     if (this.witchingHour) detectDist *= 1.12;
-    if (player.hidden) detectDist = 0; // invisible inside iron alcoves unless caught mid-entry
+    if (player.hidden) detectDist = 0;
 
     let canSeePlayer = false;
     if (distToPlayer < detectDist && hasLineOfSight(level, this.x, this.y, player.x, player.y)) {
       const angleToPlayer = Math.atan2(dyP, dxP);
       const diff = Math.abs(Math.atan2(Math.sin(angleToPlayer - this.angle), Math.cos(angleToPlayer - this.angle)));
-      // Wide peripheral awareness when player's lantern is bright or very close
       const fovHalf = player.lanternOn ? 1.15 : 0.72;
-      if (diff < fovHalf || distToPlayer < (player.lanternOn ? 95 : 44)) {
-        canSeePlayer = true;
-      }
+      if (diff < fovHalf || distToPlayer < (player.lanternOn ? 95 : 44)) canSeePlayer = true;
     }
 
     if (canSeePlayer) {
-      if (this.state !== AI_STATE.HUNT && callbacks.onSpotted) {
-        callbacks.onSpotted();
-      }
+      if (this.state !== AI_STATE.HUNT && callbacks.onSpotted) callbacks.onSpotted();
       this.state = AI_STATE.HUNT;
       this.targetX = player.x;
       this.targetY = player.y;
@@ -89,11 +119,21 @@ export class CountessAI {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
         this.state = AI_STATE.PATROL;
-        this._pickNearestWaypoint();
+        this._pickWaypoint(player);
       }
     }
 
-    // Determine target & speed
+    // In a big castle she drifts toward you: if far away for a while she re-manifests nearby, out of sight.
+    if (this.state === AI_STATE.PATROL && distToPlayer > TILE_SIZE * 22) {
+      this.farTimer += dt;
+      if (this.farTimer > 22) {
+        this.farTimer = 0;
+        this._manifestNear(level, player, callbacks);
+      }
+    } else {
+      this.farTimer = 0;
+    }
+
     let speed = this.witchingHour ? 86 : 78;
     if (this.state === AI_STATE.INVESTIGATE) speed = 94;
     if (this.state === AI_STATE.SEARCH) speed = 76;
@@ -103,55 +143,33 @@ export class CountessAI {
       const wp = this.waypoints[this.wpIndex];
       this.targetX = wp.x;
       this.targetY = wp.y;
-      if (Math.hypot(wp.x - this.x, wp.y - this.y) < 18) {
-        this.wpIndex = (this.wpIndex + 1) % this.waypoints.length;
-      }
-    } else if (this.state === AI_STATE.SEARCH) {
-      // Orbit around last seen target
-      if (Math.hypot(this.targetX - this.x, this.targetY - this.y) < 18) {
-        this.angle += dt * 2.2;
-        speed = 0;
-      }
-    } else if (this.state === AI_STATE.INVESTIGATE) {
-      if (Math.hypot(this.targetX - this.x, this.targetY - this.y) < 18) {
-        this.angle += dt * 1.8;
+      if (Math.hypot(wp.x - this.x, wp.y - this.y) < 22) this._pickWaypoint(player);
+    } else if (this.state === AI_STATE.SEARCH || this.state === AI_STATE.INVESTIGATE) {
+      if (Math.hypot(this.targetX - this.x, this.targetY - this.y) < 20) {
+        this.angle += dt * 2.0;
         speed = 0;
       }
     }
 
-    // Move with obstacle steering
     if (speed > 0) {
-      const desiredAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
-      let moveAngle = desiredAngle;
-
-      // Simple 3-whisker wall avoidance when chasing or investigating
-      const probeDist = TILE_SIZE * 0.72;
-      if (!hasLineOfSight(level, this.x, this.y, this.x + Math.cos(desiredAngle) * probeDist, this.y + Math.sin(desiredAngle) * probeDist)) {
-        const leftAngle = desiredAngle - 0.85;
-        const rightAngle = desiredAngle + 0.85;
-        const leftClear = hasLineOfSight(level, this.x, this.y, this.x + Math.cos(leftAngle) * probeDist, this.y + Math.sin(leftAngle) * probeDist);
-        const rightClear = hasLineOfSight(level, this.x, this.y, this.x + Math.cos(rightAngle) * probeDist, this.y + Math.sin(rightAngle) * probeDist);
-        if (leftClear && !rightClear) moveAngle = leftAngle;
-        else if (rightClear && !leftClear) moveAngle = rightAngle;
-        else moveAngle = desiredAngle + (this.wpIndex % 2 === 0 ? 1.1 : -1.1);
-      }
-
+      const dir = this.pathing
+        ? this.pathing.steer(this.x, this.y, this.targetX, this.targetY)
+        : (() => { const a = Math.atan2(this.targetY - this.y, this.targetX - this.x); return { x: Math.cos(a), y: Math.sin(a) }; })();
+      const moveAngle = Math.atan2(dir.y, dir.x);
       const angleDiff = Math.atan2(Math.sin(moveAngle - this.angle), Math.cos(moveAngle - this.angle));
       this.angle += angleDiff * Math.min(1, dt * 8);
-
-      this.x += Math.cos(moveAngle) * speed * dt;
-      this.y += Math.sin(moveAngle) * speed * dt;
+      this.x += dir.x * speed * dt;
+      this.y += dir.y * speed * dt;
       resolveCircleWallCollision(level, this, this.radius, false);
     }
 
-    // Unstick fallback if wedged on corner during chase
     const moved = Math.hypot(this.x - this.lastPos.x, this.y - this.lastPos.y);
     if (speed > 0 && moved < 8 * dt) {
       this.stuckTimer += dt;
-      if (this.stuckTimer > 1.2) {
+      if (this.stuckTimer > 1.5) {
         this.stuckTimer = 0;
         this.state = AI_STATE.PATROL;
-        this._pickNearestWaypoint();
+        this._pickWaypoint(player);
       }
     } else {
       this.stuckTimer = 0;
@@ -159,32 +177,36 @@ export class CountessAI {
     this.lastPos.x = this.x;
     this.lastPos.y = this.y;
 
-    // Crimson veil trail particles
-    this.trailTimer += dt;
-    if (this.trailTimer > 0.09) {
-      this.trailTimer = 0;
-      this.trail.push({ x: this.x, y: this.y, life: 0.75 });
-      if (this.trail.length > 16) this.trail.shift();
-    }
-    this.trail.forEach((p) => { p.life -= dt; });
-    this.trail = this.trail.filter((p) => p.life > 0);
-
-    // Check catch
     if (!player.hidden && distToPlayer < this.radius + player.radius - 2) {
       if (callbacks.onCaught) callbacks.onCaught();
     }
   }
 
-  _pickNearestWaypoint() {
-    let bestIdx = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < this.waypoints.length; i++) {
-      const d = Math.hypot(this.waypoints[i].x - this.x, this.waypoints[i].y - this.y);
-      if (d < bestD) {
-        bestD = d;
-        bestIdx = i;
-      }
+  _pickWaypoint(player) {
+    // Half the time she heads for the waypoint nearest to you.
+    if (Math.random() < 0.5) {
+      let best = 0;
+      let bestD = Infinity;
+      this.waypoints.forEach((w, i) => {
+        const d = Math.hypot(w.x - player.x, w.y - player.y);
+        if (d < bestD && i !== this.wpIndex) { bestD = d; best = i; }
+      });
+      this.wpIndex = best;
+    } else {
+      this.wpIndex = (this.wpIndex + 1 + Math.floor(Math.random() * 3)) % this.waypoints.length;
     }
-    this.wpIndex = (bestIdx + 1) % this.waypoints.length;
+  }
+
+  _manifestNear(level, player, callbacks) {
+    const options = this.waypoints.filter((w) => {
+      const d = Math.hypot(w.x - player.x, w.y - player.y);
+      return d > TILE_SIZE * 9 && d < TILE_SIZE * 18 && !hasLineOfSight(level, w.x, w.y, player.x, player.y);
+    });
+    if (!options.length) return;
+    const w = options[Math.floor(Math.random() * options.length)];
+    this.x = w.x;
+    this.y = w.y;
+    this.lastPos = { x: w.x, y: w.y };
+    if (callbacks.onManifest) callbacks.onManifest();
   }
 }

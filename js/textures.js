@@ -230,5 +230,106 @@ export function makeTextures() {
     }
   });
 
+  // Moonlit cobbles for the outer ward / gate court.
+  T.cobble = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(91);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x, y, 22, 22, 30);
+    for (let cy = 0; cy < 32; cy += 8) for (let cx = (cy / 8) % 2 ? 4 : 0; cx < 36; cx += 8) {
+      const tone = (r() - 0.5) * 22;
+      for (let y = 1; y < 7; y++) for (let x = 1; x < 7; x++) {
+        if ((x === 1 || x === 6) && (y === 1 || y === 6)) continue;
+        const n = (r() - 0.5) * 10 + (y < 3 ? 8 : 0);
+        set((cx + x) % 32, cy + y, 66 + tone + n, 64 + tone + n, 76 + tone + n);
+      }
+    }
+    for (let i = 0; i < 18; i++) set(Math.floor(r() * 32), Math.floor(r() * 32), 40, 58, 34); // moss
+  });
+
+  T.kitchen = makeCanvasTex(16, 16, (set, w, h) => {
+    const r = seeded(17);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const checker = ((x >> 3) + (y >> 3)) % 2;
+      const n = (r() - 0.5) * 10;
+      const grout = x % 8 === 7 || y % 8 === 7;
+      if (grout) set(x, y, 24, 16, 14);
+      else if (checker) set(x, y, 104 + n, 52 + n, 34 + n);
+      else set(x, y, 70 + n, 58 + n, 50 + n);
+    }
+  });
+
+  T.blood = makeCanvasTex(32, 32, (set, w, h) => {
+    const r = seeded(66);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const lx = x % 16, ly = y % 16;
+      const grout = lx === 15 || ly === 15;
+      const n = (r() - 0.5) * 12;
+      if (grout) set(x, y, 30, 8, 12);
+      else set(x, y, 50 + n, 40 + n, 46 + n);
+    }
+    // pooled stains
+    for (const [cx, cy, rad] of [[9, 10, 5], [24, 22, 6], [20, 5, 3]]) {
+      for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) {
+        if (x * x + y * y <= rad * rad * (0.6 + r() * 0.5)) set(cx + x, cy + y, 92 + r() * 20, 6, 16);
+      }
+    }
+  });
+
+  T.wood = makeCanvasTex(16, 16, (set, w, h) => {
+    const r = seeded(29);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const plank = y % 4 === 3;
+      const n = (r() - 0.5) * 12 + Math.sin(x * 0.9 + y) * 4;
+      if (plank) set(x, y, 34, 20, 14);
+      else set(x, y, 92 + n, 58 + n, 34 + n);
+    }
+  });
+
+  T.rags = makeCanvasTex(16, 16, (set, w, h) => {
+    const r = seeded(41);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = (r() - 0.5) * 16;
+      let c = [74 + n, 62 + n, 44 + n];
+      if (r() < 0.06) c = [100, 14, 20];
+      if (y > 12 && r() < 0.4) c = [0, 0, 0, 0];
+      set(x, y, c[0], c[1], c[2], c[3] ?? 255);
+    }
+  });
+
+  T.ghoulSkin = makeCanvasTex(8, 8, (set) => {
+    const r = seeded(3);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const n = (r() - 0.5) * 14; set(x, y, 104 + n, 118 + n, 92 + n); }
+    set(2, 3, 255, 236, 120); set(5, 3, 255, 236, 120); // eyes
+    for (let x = 2; x < 6; x++) set(x, 5, 40, 20, 20);
+    set(2, 6, 210, 200, 170); set(4, 6, 210, 200, 170);
+  });
+
+  T.shift = makeCanvasTex(16, 16, (set, w, h) => {
+    const r = seeded(8);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = (r() - 0.5) * 10;
+      const stain = y > 7 && r() < (y - 7) / 10;
+      if (stain) set(x, y, 140 + n, 10, 24);
+      else set(x, y, 214 + n, 206 + n, 196 + n);
+    }
+  });
+
+  T.maidenFace = makeCanvasTex(8, 8, (set) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) set(x, y, 16, 10, 14); // hair curtain
+    for (let y = 3; y < 7; y++) for (let x = 3; x < 5; x++) set(x, y, 220, 210, 204);
+    set(3, 4, 255, 30, 60); set(4, 4, 255, 30, 60);
+    set(3, 6, 140, 0, 20); set(4, 6, 140, 0, 20);
+  });
+
+  T.stained = makeCanvasTex(8, 16, (set, w, h) => {
+    const cols = [[170, 20, 40], [220, 170, 60], [40, 70, 160], [120, 20, 120]];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const lead = x === 0 || x === w - 1 || y === 0 || y % 4 === 0 || x === 4;
+      if (lead) { set(x, y, 20, 16, 20); continue; }
+      const c = cols[(Math.floor(y / 4) + (x > 4 ? 1 : 0)) % 4];
+      set(x, y, c[0], c[1], c[2]);
+    }
+    for (let x = 1; x < 7; x++) if (Math.abs(x - 3.5) < 2.5) set(x, 1, 230, 200, 120);
+  });
+
   return T;
 }

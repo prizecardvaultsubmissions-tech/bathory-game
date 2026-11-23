@@ -4,7 +4,7 @@ A mobile-first gothic stealth horror prototype for Prize Card Vault / *House of 
 
 Play the public test build: **https://prizecardvaultsubmissions-tech.github.io/bathory-game/**
 
-You sneak through Csejte (Čachtice) Castle collecting five ledger pages while Elizabeth Báthory hunts you. Your lantern lights the way, but it also draws her in. Douse it to hide, slip into iron alcoves, or flare to stun her. Dying leaves your fallen lantern behind on the next attempt.
+You pick a weapon, then explore six wings of Csejte (Čachtice) Castle hunting for five ledger pages. Her risen servants (ghouls, blood maidens and bat swarms) crawl out of the mist more and more often, and you can cut them down. Elizabeth Báthory herself can't be harmed: hide, douse your lantern, flare, or shatter a mirror to freeze her (3s to 15s by mirror tier). Dying leaves your fallen lantern behind on the next attempt.
 
 This is an original game inspired by public-domain Báthory history and legend. It is not affiliated with the 2006 film *Stay Alive*.
 
@@ -15,10 +15,10 @@ python3 -m http.server 8765 --bind 127.0.0.1
 # then open http://127.0.0.1:8765/
 ```
 
-Touch controls work on a phone browser. Keyboard fallback: WASD to move, E to act/hide, F to douse the lantern, Q to flare.
+Touch controls work on a phone browser. Keyboard fallback: WASD to move, Space/J to attack, E to act/hide, R for a mirror, F to douse the lantern, Q to flare.
 
 See `GDD.md` for the full design document, title options, and the path to App Store / Google Play via Capacitor.
 
 ## QA
 
-`qa/qa_3d.py` runs Playwright at a 390x844 phone viewport, captures `screens/`, and fails loudly on console errors. Add `?qa` to the URL to expose a small test hook.
+`qa/qa_combat.py` runs Playwright at a 390x844 phone viewport. It covers weapon select, killing monsters, natural spawning, mirror pickup, mirror freeze, auto-mirror on catch, obsidian repel, hiding, death and retry. It captures `screens/` and reports console errors. Add `?qa` to the URL to expose a small test hook.

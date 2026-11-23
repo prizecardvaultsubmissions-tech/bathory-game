@@ -1,4 +1,4 @@
-const CACHE_NAME = "csejte-blood-ledger-v2-3d";
+const CACHE_NAME = "csejte-blood-ledger-v3-combat";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,6 +11,9 @@ const ASSETS = [
   "./js/textures.js",
   "./js/characters.js",
   "./js/vendor/three.module.min.js",
+  "./js/vendor/BufferGeometryUtils.js",
+  "./js/monsters.js",
+  "./js/weapons.js",
   "./js/enemy.js",
   "./js/game.js",
   "./icons/icon-192.png",

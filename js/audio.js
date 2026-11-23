@@ -246,4 +246,90 @@ export class SoundEngine {
       osc.stop(t + i * 0.1 + 0.9);
     });
   }
+
+  _noise(dur, { type = "bandpass", freq = 800, q = 1, gain = 0.2, decay = 0.3, delay = 0 } = {}) {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime + delay;
+    const n = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * decay));
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const f = this.ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t);
+  }
+
+  _tone(freq, dur, { type = "sine", gain = 0.15, to = null, delay = 0 } = {}) {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime + delay;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  playSwing(kind) {
+    if (kind === "crossbow") {
+      this._tone(180, 0.12, { type: "square", gain: 0.12, to: 90 });
+      this._noise(0.08, { type: "highpass", freq: 3000, gain: 0.15 });
+      return;
+    }
+    const heavy = kind === "mace";
+    this._noise(heavy ? 0.28 : 0.14, { type: "bandpass", freq: heavy ? 500 : 1600, q: 0.8, gain: heavy ? 0.22 : 0.16, decay: 0.5 });
+    if (kind === "staff") this._noise(0.25, { type: "lowpass", freq: 900, gain: 0.1, decay: 0.6 });
+  }
+
+  playHit(heavy = false) {
+    this._tone(heavy ? 90 : 150, 0.16, { type: "triangle", gain: 0.3, to: 45 });
+    this._noise(0.1, { type: "highpass", freq: heavy ? 1800 : 3200, gain: 0.22, decay: 0.25 });
+  }
+
+  playClang() {
+    this._tone(880, 0.35, { type: "square", gain: 0.06 });
+    this._tone(1320, 0.3, { type: "sine", gain: 0.08 });
+  }
+
+  playMonsterSpot(kind) {
+    if (kind === "bats") { for (let i = 0; i < 4; i++) this._tone(3200 + Math.random() * 1500, 0.05, { type: "square", gain: 0.035, delay: i * 0.06 }); return; }
+    if (kind === "maiden") { this._tone(700, 0.5, { type: "sawtooth", gain: 0.05, to: 1200 }); return; }
+    this._tone(110, 0.6, { type: "sawtooth", gain: 0.08, to: 70 });
+  }
+
+  playMonsterDie() {
+    this._tone(300, 0.6, { type: "sawtooth", gain: 0.08, to: 40 });
+    this._noise(0.5, { type: "lowpass", freq: 700, gain: 0.18, decay: 0.6 });
+  }
+
+  playHurt() {
+    this._tone(70, 0.25, { type: "sine", gain: 0.4, to: 35 });
+    this._noise(0.12, { type: "bandpass", freq: 600, gain: 0.25 });
+  }
+
+  playMirror(tier) {
+    this._noise(0.5, { type: "highpass", freq: 4200, gain: 0.32, decay: 0.35 });
+    const base = { cracked: 660, silver: 880, gilded: 990, obsidian: 440 }[tier] || 880;
+    [1, 1.5, 2].forEach((m, i) => this._tone(base * m, 1.2, { type: "sine", gain: 0.1, delay: i * 0.05 }));
+  }
+
+  playPickup() {
+    this._tone(988, 0.15, { gain: 0.1 });
+    this._tone(1318, 0.25, { gain: 0.1, delay: 0.08 });
+  }
+
+  playSpawn() {
+    this._noise(0.9, { type: "lowpass", freq: 300, gain: 0.12, decay: 0.7 });
+    this._tone(55, 0.9, { type: "sawtooth", gain: 0.05, to: 40 });
+  }
 }
