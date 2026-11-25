@@ -300,6 +300,40 @@ All three stages keep the PS1 / FF7 low-poly silhouette while upgrading lighting
 - **Post-Processing:** Per-stage/floor color grading (gain, lift, saturation), bloom-lite glow bleed, film grain/dither, vignette, and optional chromatic aberration on High.
 - **Quality Toggle (`js/quality.js`):** Cycles **AUTO / LOW / MEDIUM / HIGH** from the title screen or pause menu (`csejte_quality`). Presets scale internal resolution (`220` / `290` / `360` px), shadow map (`off` / `512` / `1024`), active flame lights (`2` / `4` / `6`), particle budgets, bloom, grain, decals (`12` / `28` / `48`), and CA. **AUTO** monitors live FPS while playing and steps down if frame rate dips.
 
+---
+
+## 5e. Five-Stage Progression & Opening Stages (v0.8)
+The campaign now unfolds as a continuous five-stage approach and ascent:
+1. **Stage I — The Woods** *(new, `js/stage_woods.js`)*
+2. **Stage II — The Courtyard** *(new, `js/stage_courtyard.js`)*
+3. **Stage III — Csejte Castle** *(formerly Stage I)*
+4. **Stage IV — The Graveyards** *(formerly Stage II)*
+5. **Stage V — The Climb** *(formerly Stage III)*
+
+All shop inventory, permanent upgrades, purse rules, weapons, armor, mirrors, keys/kill counts, and between-stage carry-over persist across all five stages. Legacy v0.6/v0.7 `localStorage` unlocks migrate automatically (`csejte_stage2` → Stage IV unlocked, `csejte_stage3` → Stage V unlocked, stamped with `csejte_ver: 8`). Direct test URLs accept `?qa&stage=1` through `?qa&stage=5`.
+
+### Stage I — The Woods
+Six moonlit forest regions (*Old Timber Road*, *The Wolf Hollow*, *Woodcutter's Hut*, *The Wayside Cross*, *The Pale Marsh*, *Hillfoot Postern*), 5 **Trail Talismans**, a Hooded Pedlar camp at `[44, 42]`, a Wayside Shrine & offering well at `[23, 41]`, 21 breakable crates/barrels, and 2 hidden trail shortcuts (*Hollow Oak* & *Woodcutter's Plank*).
+- **Monsters:**
+  - **Briar Wolf** (`26 HP`, fast quadruped, `8 dmg`)
+  - **Thorn Stalker** (`52 HP`, bark-and-antler stag-skull revenant, `14 dmg`)
+  - **Marsh Wisp** (`18 HP`, charred skull-lantern orbited by 5 pale flames; drains `6%` oil on hit)
+  - **Mini-Boss — The Old Packmaster** (`220 HP`, scarred dire-beast with spiked iron collar & swoop lunge, `20 dmg`). Both all 5 Trail Talismans and defeating the Packmaster are required to open the Hillfoot Postern north exit.
+- **Puzzles:**
+  - **Key I — Standing Stones (`stones`):** Touch the four beast obelisks from canopy to earth: **`owl → crow → stag → wolf`**. A wrong stone wakes a frail Briar Wolf (`22 HP`) and resets. Reward: Gilded Mirror, 25 coins, 100 Sanity.
+  - **Key II — Hunter's Trap (`snare`):** Turn the four compass winches in order within 45s before the spiked timber jaws close: **`north → east → west → south`**. Wrong winches reset and lurch the jaws inward. Reward: Obsidian Mirror, 35 coins, 100 Armor.
+
+### Stage II — The Courtyard
+Six outer-bailey regions (*South Postern Yard*, *The Stables*, *The Kennels*, *The Drill Yard*, *Watchtower Barracks*, *Castle Gatehouse*), 5 **Garrison Orders**, a Hooded Pedlar stall at `[45, 42]`, the Courtyard Well at `[20, 40]`, 21 breakable crates/barrels, and 2 secret sally ports (*Stable Post* & *Kennel Grate*).
+- **Monsters:**
+  - **Castle Hound** (`34 HP`, iron-collared mastiff, `10 dmg`)
+  - **Corrupted Sentry** (`58 HP`, rusted plate & kettle-helm halberdier, `15 dmg`)
+  - **Carrion Crows** (`22 HP`, swirling 7-crow murder; drains `6%` oil on hit)
+  - **Mini-Boss — The Gate Warden** (`270 HP`, horned castellan with crimson cloak, great-axe & watch-lantern, `22 dmg`). Both all 5 Garrison Orders and defeating the Gate Warden are required to open the Castle Doors north exit.
+- **Puzzles:**
+  - **Key I — Heraldry Armory (`heraldry`):** Touch the four oath shields in order: **`sword → key → rose → crown`**. A wrong shield wakes a frail Corrupted Sentry (`26 HP`) and resets. Reward: Gilded Mirror, 30 coins, 100 Sanity.
+  - **Key II — Portcullis Winch (`winch`):** Turn the four metal capstan wheels from dullest to brightest within 42s before the iron grate drops: **`iron → brass → silver → gold`**. Wrong wheels slip the chains closer. Reward: Obsidian Mirror, 40 coins, 100 Armor.
+
 ## 6. Enemies & Countess AI
 
 ### Primary Stalker: Elizabeth Báthory (The Blood Countess)

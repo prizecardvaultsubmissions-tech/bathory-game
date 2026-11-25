@@ -9,7 +9,7 @@ const tileCenter = (tx, ty) => ({ x: (tx + 0.5) * TILE, z: (ty + 0.5) * TILE });
 export function buildWoodsCourtyardProps(renderer, level, B, mats, smallFlames) {
   const { woodMat, stoneMat, goldMat, ironMat, waxMat, earthMat, barkMat, boneMat, darkStone } = mats;
   const T = renderer.T;
-  const rnd = renderer._rng;
+  let _rs = 1612; const rnd = () => { _rs = (_rs * 16807) % 2147483647; return (_rs - 1) / 2147483646; };
   const kind = level.kind;
   const isOpen = (tx, ty) => ty >= 0 && ty < level.rows && tx >= 0 && tx < level.cols && (level.grid[ty][tx] === 0 || level.grid[ty][tx] === 3);
 

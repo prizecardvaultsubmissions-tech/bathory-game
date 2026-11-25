@@ -2358,7 +2358,7 @@ function updatePuzzleHud() {
     puzzleHud.classList.remove("urgent");
   } else {
     const secs = crushSecondsLeft(lr);
-    puzzleInfo.textContent = `${kindOf(lr) === "snare" ? "Winches" : "Plates"} ${lr.progress} / ${lr.order.length} · jaws close in ${Math.ceil(secs)}s`;
+    puzzleInfo.textContent = `${kindOf(lr) === "snare" ? "Winches" : "Plates"} ${lr.progress} / ${lr.order.length} · ${kindOf(lr) === "snare" ? "jaws close in" : "walls meet in"} ${Math.ceil(secs)}s`;
     puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset / crushMaxInset(lr)) * 100}%`;
     puzzleHud.classList.toggle("urgent", secs < 10);
   }
@@ -2920,7 +2920,7 @@ if (new URLSearchParams(location.search).has("qa")) {
     closeLore() { screenLore.classList.add("hidden"); if (mode === "LORE") mode = "PLAYING"; },
     pickWeapon(id) { closeTokenPicker(); swapWeapon(id); },
     hurt(n) { player.invuln = 0; damagePlayer(n, player.x, player.y + 10, "QA"); return [player.health, player.armor]; },
-    newRun: () => startNewRun(1),
+    newRun: (st) => startNewRun(st || level.stage),
     // ---- v0.6 / v0.8
     startStage(n = 1, carryCoins = null) {
       unlockUpTo(n);

@@ -51,6 +51,7 @@ try:
         page.locator("#btn-begin").tap()
         page.wait_for_timeout(700)
         check("playing_with_weapon", q("[window.__qa.mode, window.__qa.player.weapon]") == ["PLAYING", "mace"])
+        q("window.__qa.startStage(3)"); page.wait_for_timeout(600)
         first_timer = q("window.__qa.spawnTimer")
         check("first_spawn_timer", 2.8 <= first_timer <= 4.05, round(first_timer, 2))
         world_mirrors = q("""() => { const c = {cracked:0,silver:0,gilded:0,obsidian:0}; window.__qa.level.mirrors.forEach(m => { c[m.tier]+=1; }); return c; }""")

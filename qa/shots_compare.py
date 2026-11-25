@@ -19,13 +19,13 @@ CALM = """() => { const Q = window.__qa; Q.spawnTimer = 999; Q.wellTimer = 999; 
 HOLD = """() => { const Q = window.__qa; Q.spawnTimer = 999; Q.wellTimer = 999; for (const m of Q.monsters) { m.state = 'WANDER'; m.timer = 0; m.angle = Math.atan2(Q.player.y - m.y, Q.player.x - m.x); m.update = function(){}; } Q.countess.update = function(){}; }"""
 
 SCENES = {
-  1: [
+  3: [
     ("outer-ward", (28, 40), -1.5708, (40, 20), [("ghoul", 30, 38), ("maiden", 26, 38)]),
     ("great-hall", (28, 27), -1.5708, (28, 22), [("bats", 25, 25)]),
     ("torture", (9, 10), -1.5708, (40, 20), [("ghoul", 7, 7), ("ghoul", 12, 8)]),
     ("faces", (28, 39), 1.5708, (29, 37), [("ghoul", 26, 38), ("maiden", 30, 39)]),
   ],
-  2: [
+  4: [
     ("chapelyard", (28, 37), -1.5708, (47, 7), [("skeleton", 26, 34), ("banshee", 30, 33)]),
     ("mausoleum", (9, 12), -1.5708, (47, 7), [("brute", 10, 9)]),
     ("bonepit", (47, 33), -1.5708, (47, 29), [("skeleton", 45, 31)]),

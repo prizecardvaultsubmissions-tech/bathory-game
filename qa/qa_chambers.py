@@ -42,6 +42,7 @@ try:
         page.locator("#btn-start").tap(); W(500)
         page.locator('.weapon-option[data-weapon="mace"]').tap(); W(300)
         page.locator("#btn-begin").tap(); W(700)
+        q("window.__qa.startStage(3)"); W(600)
         q(CALM)
         n_brk = q("window.__qa.breakables.length")
         check("breakables_placed", n_brk >= 20, n_brk)

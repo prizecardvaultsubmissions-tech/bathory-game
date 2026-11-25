@@ -49,7 +49,7 @@ try:
             q("window.__qa.closeLore()")
 
         q("window.__qa.resetProgress()")
-        check("stage3_chip_hidden_initially", q("document.getElementById('btn-stage-3').classList.contains('hidden')"))
+        check("stage3_chip_hidden_initially", q("document.getElementById('btn-stage-5').classList.contains('hidden')"))
 
         # ---------------- quality toggle (title chip cycles AUTO -> LOW -> MEDIUM -> HIGH)
         q("window.__qa.setQuality('auto')")
@@ -66,7 +66,7 @@ try:
         q("window.__qa.setQuality('high')")
 
         # ---------------- Stage II clear -> Stage III with carry-over
-        q("window.__qa.startStage(2, 0)"); W(500)
+        q("window.__qa.startStage(4, 0)"); W(500)
         q("() => { const Q = window.__qa; Q.spawnTimer = 999; Q.wellTimer = 999; Q.countess.state = 'PATROL'; for (const m of Q.monsters) m.remove = true; }")
         q("window.__qa.setCoins(150)"); q("window.__qa.giveMirror('silver', 2)")
         m = q("window.__qa.clearStage()"); W(700)
@@ -75,9 +75,9 @@ try:
         shot(page, "50-stage3-transition.png")
         page.locator("#btn-stage-enter").tap(); W(1200)
         s3 = q("[window.__qa.mode, window.__qa.stage, window.__qa.floor, window.__qa.player.coins, window.__qa.player.mirrors.silver, window.__qa.countessAway > 0]")
-        check("enter_stage3_carry", s3[:3] == ["PLAYING", 3, 1] and s3[3] == 150 and s3[4] >= 2 and s3[5], s3)
+        check("enter_stage3_carry", s3[:3] == ["PLAYING", 5, 1] and s3[3] == 150 and s3[4] >= 2 and s3[5], s3)
         card = q("[document.getElementById('stage-card-num').textContent, document.getElementById('stage-card-title').textContent]")
-        check("stage3_card", card == ["STAGE III", "THE CLIMB"], card)
+        check("stage3_card", card == ["STAGE V", "THE CLIMB"], card)
         W(400); q(HIDE_UI)
         shot(page, "51-s3-floor1-cellar.png")
         check("hud_label_seals", q("document.getElementById('hud-pages-label').textContent") == "SEALS")
@@ -247,7 +247,7 @@ try:
         check("clock_solved_reward", after[0] == before[0] + 1 and after[1] == before[1] + 50 and after[2] == 100 and after[3], [before, after])
 
         # ---------------- Mirrors left to the portrait too long? no — timed failure is the clock:
-        q("window.__qa.startStage(3, 30)"); W(600); q(CALM)
+        q("window.__qa.startStage(5, 30)"); W(600); q(CALM)
         q("window.__qa.goFloor(3)"); q(CALM)
         q("window.__qa.giveKey(2)"); q("() => { const Q = window.__qa; Q.place(Q.player, 47, 44); }"); q("window.__qa.unlock(2)")
         q("() => { const Q = window.__qa; Q.place(Q.player, 47, 48); }"); W(800); q("window.__qa.closeLore()")
@@ -258,7 +258,7 @@ try:
 
         # ---------------- Tower top: the Gargoyle, then the ending
         page.locator("#btn-retry").tap(); W(800); q(CALM)
-        check("retry_stays_stage3", q("[window.__qa.stage, window.__qa.floor]") == [3, 1])
+        check("retry_stays_stage3", q("[window.__qa.stage, window.__qa.floor]") == [5, 1])
         for n in range(1, 6):
             collect_seal(n - 1)
             q(f"window.__qa.takeStair({n}, 'up')"); q(CALM)
@@ -284,15 +284,15 @@ try:
         check("boss_killed_opens_gate", killed and q("window.__qa.bossDead") and q("window.__qa.gateOpen()"))
         W(500); q("window.__qa.interact()"); W(800)
         win = q("[window.__qa.mode, document.querySelector('#screen-win h2').textContent, document.querySelector('.relic-sub').textContent]")
-        check("ending_screen", win[0] == "WIN" and "DAWN" in win[1] and "v0.7" in win[2], win)
+        check("ending_screen", win[0] == "WIN" and "DAWN" in win[1] and "v0.8" in win[2], win)
         shot(page, "64-s3-ending.png")
         page.locator("#btn-win-title").tap(); W(500)
-        t = q("[document.getElementById('btn-continue').textContent, document.getElementById('btn-stage-3').classList.contains('hidden')]")
-        check("title_continue_stage3", "STAGE III" in t[0] and t[1] is False, t)
+        t = q("[document.getElementById('btn-continue').textContent, document.getElementById('btn-stage-5').classList.contains('hidden')]")
+        check("title_continue_stage3", "STAGE V" in t[0] and t[1] is False, t)
         shot(page, "65-title-stage3.png")
-        page.locator("#btn-stage-3").tap(); W(400)
+        page.locator("#btn-stage-5").tap(); W(400)
         page.locator("#btn-begin").tap(); W(900)
-        check("stage3_chip_starts", q("[window.__qa.mode, window.__qa.stage, window.__qa.floor]") == ["PLAYING", 3, 1])
+        check("stage3_chip_starts", q("[window.__qa.mode, window.__qa.stage, window.__qa.floor]") == ["PLAYING", 5, 1])
         # pause screen quality button
         page.locator("#btn-pause").tap(); W(300)
         l0 = q("document.querySelector('#btn-quality-pause .q-label').textContent")

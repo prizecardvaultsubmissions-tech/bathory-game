@@ -2344,7 +2344,7 @@ export class Renderer3D {
     else if (sk === "climb" && this.floorDef) this.fogColor.setHex(witching ? 0x1c0408 : this.floorDef.fog);
     else this.fogColor.setHex(witching ? 0x1c0408 : 0x0a0610);
     // on the tower top the moon sits small in the corner, clear of the gargoyle's approach
-    if (sk === "climb") this.postMat.uniforms.uMoonP.value.set(0.17, 0.7, 0.7); else this.postMat.uniforms.uMoonP.value.set(0.7, 0.75, 1.0);
+    if (sk === "climb") this.postMat.uniforms.uMoonP.value.set(0.17, 0.7, 0.7); else if (sk === "woods" || sk === "courtyard") this.postMat.uniforms.uMoonP.value.set(0.76, 0.78, 0.72); else this.postMat.uniforms.uMoonP.value.set(0.7, 0.75, 1.0);
     this.postMat.uniforms.uMoon.value = ((sk === "woods" || sk === "courtyard" || sk === "graveyards") || (sk === "climb" && this.floorDef && this.floorDef.open)) && !inMenu ? 1 : 0;
     this._grade(witching);
     this.postMat.uniforms.uRedShift.value = dangerRed * 0.45;
