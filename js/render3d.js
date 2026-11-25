@@ -5,6 +5,7 @@ import { AI_STATE } from "./enemy.js";
 import { makeTextures, seeded } from "./textures.js";
 import { upgradeTextures, upgradeCharacterTextures } from "./textures_hd.js";
 import { buildStage3Props, buildStage3Rigs, updateStage3 } from "./render_stage3.js";
+import { buildWoodsCourtyardProps, buildWoodsCourtyardPuzzles, updateWoodsCourtyard } from "./render_woods_courtyard.js";
 import { QUALITY_PRESETS } from "./quality.js";
 import { buildInvestigator, buildCountess, buildWeapon, buildMonster } from "./characters.js";
 
@@ -115,6 +116,23 @@ class Batcher {
 }
 
 const CAM_OFFSETS = {
+  // Stage I (The Woods) & Stage II (The Courtyard)
+  timberroad: [0.0, 8.2, 7.2],
+  wolfhollow: [-1.8, 8.4, 6.8],
+  hut: [1.8, 8.2, 6.8],
+  crossroads: [0.0, 8.4, 7.0],
+  marsh: [-1.8, 8.4, 6.8],
+  hillgate: [0.0, 8.6, 7.2],
+  stones: [0.0, 11.4, 7.8],
+  snare: [0.0, 11.8, 7.6],
+  postern: [0.0, 8.2, 7.2],
+  stables: [-1.8, 8.4, 6.8],
+  kennels: [1.8, 8.4, 6.8],
+  drillyard: [0.0, 8.6, 7.0],
+  barracks: [-1.6, 8.4, 6.8],
+  gatehouse: [0.0, 8.6, 7.2],
+  heraldry: [0.0, 11.4, 7.8],
+  winch: [0.0, 11.8, 7.6],
   ward: [0.0, 7.6, 7.4],
   chapel: [-2.2, 8.4, 6.6],
   kitchens: [2.2, 8.4, 6.6],
@@ -162,6 +180,40 @@ function glyphTexture(sym, color = "#ffd86a", bg = "#2a2018") {
     if (bar) { g.beginPath(); g.moveTo(16, 32 + (up ? 4 : -4)); g.lineTo(48, 32 + (up ? 4 : -4)); g.stroke(); }
   };
   switch (sym) {
+    case "owl":
+      g.beginPath(); g.arc(32, 34, 14, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(26, 31, 4, 0, Math.PI * 2); g.arc(38, 31, 4, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(20, 22); g.lineTo(26, 26); g.moveTo(44, 22); g.lineTo(38, 26); g.stroke();
+      break;
+    case "stag":
+      g.beginPath(); g.moveTo(22, 46); g.lineTo(32, 32); g.lineTo(42, 46); g.moveTo(32, 32); g.lineTo(32, 22);
+      g.moveTo(32, 24); g.lineTo(18, 14); g.moveTo(24, 19); g.lineTo(24, 11);
+      g.moveTo(32, 24); g.lineTo(46, 14); g.moveTo(40, 19); g.lineTo(40, 11); g.stroke();
+      break;
+    case "wolf":
+      g.beginPath(); g.moveTo(16, 42); g.lineTo(22, 16); g.lineTo(30, 26); g.lineTo(34, 26); g.lineTo(42, 16); g.lineTo(48, 42); g.lineTo(32, 50); g.closePath(); g.stroke();
+      g.fillRect(25, 32, 4, 4); g.fillRect(35, 32, 4, 4);
+      break;
+    case "north": case "east": case "south": case "west": {
+      const ang = { north: -Math.PI / 2, east: 0, south: Math.PI / 2, west: Math.PI }[sym];
+      g.save(); g.translate(32, 32); g.rotate(ang);
+      g.beginPath(); g.moveTo(-14, 0); g.lineTo(14, 0); g.lineTo(4, -10); g.moveTo(14, 0); g.lineTo(4, 10); g.stroke();
+      g.restore();
+      break;
+    }
+    case "sword":
+      g.beginPath(); g.moveTo(32, 10); g.lineTo(32, 46); g.moveTo(20, 38); g.lineTo(44, 38); g.stroke();
+      g.beginPath(); g.arc(32, 50, 4, 0, Math.PI * 2); g.fill();
+      break;
+    case "crown":
+      g.beginPath(); g.moveTo(14, 42); g.lineTo(14, 24); g.lineTo(24, 32); g.lineTo(32, 18); g.lineTo(40, 32); g.lineTo(50, 24); g.lineTo(50, 42); g.closePath(); g.stroke();
+      break;
+    case "brass": case "gold": {
+      g.fillStyle = sym === "gold" ? "#f4c84a" : "#c8963e";
+      g.beginPath(); g.arc(32, 32, 17, 0, Math.PI * 2); g.fill();
+      g.fillStyle = bg; g.beginPath(); g.arc(32, 32, 7, 0, Math.PI * 2); g.fill();
+      break;
+    }
     case "sun":
       g.beginPath(); g.arc(32, 32, 9, 0, Math.PI * 2); g.fill();
       for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(32 + Math.cos(a) * 14, 32 + Math.sin(a) * 14); g.lineTo(32 + Math.cos(a) * 22, 32 + Math.sin(a) * 22); g.stroke(); }
@@ -437,8 +489,10 @@ export class Renderer3D {
     }
     if (!this.built) {
       this.stage = stage;
-      this.scene.fog.near = stage === 2 ? 9 : 10;
-      this.scene.fog.far = stage === 2 ? 28 : 30;
+      this.stageKind = level.kind || "castle";
+      const open = this.stageKind === "woods" || this.stageKind === "courtyard" || this.stageKind === "graveyards";
+      this.scene.fog.near = this.stageKind === "woods" ? 8.5 : open ? 9.5 : 10;
+      this.scene.fog.far = this.stageKind === "woods" ? 26 : open ? 29 : 30;
       this._build(level);
       this.built = true;
       this.builtStage = stage;
@@ -530,12 +584,20 @@ export class Renderer3D {
     const isOpen = (tx, ty) => ty >= 0 && ty < level.rows && tx >= 0 && tx < level.cols && (level.grid[ty][tx] === 0 || level.grid[ty][tx] === 3);
 
     // ---------- Lights ----------
-    const S2 = level.stage === 2;
-    const S3 = level.stage === 3;
+    const kind = level.kind || "castle";
+    const SW = kind === "woods";
+    const SC = kind === "courtyard";
+    const S2 = kind === "graveyards";
+    const S3 = kind === "climb";
+    const OUT = SW || SC || S2;
+    this.stageKind = kind;
     this.glyph = glyphTexture;
-    this.hemi = S2 ? new THREE.HemisphereLight(0x8098c8, 0x1c2430, 2.7) : new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6);
+    this.hemi = SW ? new THREE.HemisphereLight(0x68887a, 0x162018, 2.4)
+      : SC ? new THREE.HemisphereLight(0x7c90bc, 0x1a1e28, 2.5)
+      : S2 ? new THREE.HemisphereLight(0x8098c8, 0x1c2430, 2.7)
+      : new THREE.HemisphereLight(0x5a4070, 0x1a0c14, 1.6);
     scene.add(this.hemi);
-    const moon = new THREE.DirectionalLight(S2 ? 0xb0c4f0 : 0x6c7fb0, S2 ? 1.5 : 0.55);
+    const moon = new THREE.DirectionalLight(OUT ? 0xaec4ee : 0x6c7fb0, SW ? 1.25 : (SC || S2) ? 1.45 : 0.55);
     moon.position.set(-10, 20, 6);
     scene.add(moon);
     this.moon = moon;
@@ -550,7 +612,7 @@ export class Renderer3D {
     // Subdivide base & room planes and separate Y so PS1 vertex snapping never causes Z-fighting.
     const base = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh, 16, 16), S3
       ? this._mat("floor3-void", { color: 0x050407 }) // solid tower masonry between the floors reads as black
-      : this._mat(S2 ? "floor2" : "floor", { map: this._texRepeat(S2 ? T.dirt : T.floor, level.cols, level.rows) }));
+      : this._mat(`floor-${kind}`, { map: this._texRepeat(SW ? (T.forestFloor || T.grass) : SC ? (T.cobbleYard || T.cobble) : S2 ? T.dirt : T.floor, level.cols, level.rows) }));
     base.rotation.x = -Math.PI / 2;
     base.position.set(fw / 2, S3 ? -0.08 : -0.02, fh / 2);
     base.receiveShadow = true;
@@ -559,7 +621,7 @@ export class Renderer3D {
       if (r.floor === "floor") continue;
       const w = r.x1 - r.x0 + 1;
       const h = r.y1 - r.y0 + 1;
-      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood, grass: T.grass, dirt: T.dirt, bone: T.boneFloor, flag: T.flag }[r.floor] || T[r.floor] || T.floor;
+      const tex = { cobble: T.cobble, kitchen: T.kitchen, blood: T.blood, grass: T.grass, dirt: T.dirt, bone: T.boneFloor, flag: T.flag, forestFloor: T.forestFloor || T.grass, mossTrail: T.mossTrail || T.dirt, bogWater: T.bogWater || T.dirt, woodFloor: T.wood, cobbleYard: T.cobbleYard || T.cobble, stableStraw: T.stableStraw || T.dirt, kennelFlag: T.kennelFlag || T.flag }[r.floor] || T[r.floor] || T.floor;
       const p = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE, h * TILE, Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2))), this._mat(`floor-${level.stage}-${r.key}`, { map: this._texRepeat(tex, w, h) }));
       p.rotation.x = -Math.PI / 2;
       p.position.set((r.x0 + w / 2) * TILE, 0.005, (r.y0 + h / 2) * TILE);
@@ -593,10 +655,15 @@ export class Renderer3D {
         if (touches) wallTiles.push([tx, ty]);
       }
     }
-    const WH = S2 ? 1.1 : WALL_H; // graveyard: low mossy walls topped with iron fencing
+    const WH = S2 ? 1.1 : SW ? 2.5 : WALL_H; // graveyard: low mossy fence; woods: treeline; courtyard/castle: curtain/keep walls
     this.wallH = WH;
-    const wallSide = S2 ? this._mat("wallSide2", { map: T.moss }, true) : this._mat("wallSide", { map: T.stone }, true);
-    const wallTop = S2 ? this._mat("wallTop2", { map: T.mossTop }, true) : this._mat("wallTop", { map: T.stoneTop }, true);
+    const wallSide = S2 ? this._mat("wallSide2", { map: T.moss }, true)
+      : SW ? this._mat("wallSideW", { map: T.barkWall || T.wood }, true)
+      : SC ? this._mat("wallSideC", { map: T.baileyWall || T.stone }, true)
+      : this._mat("wallSide", { map: T.stone }, true);
+    const wallTop = S2 ? this._mat("wallTop2", { map: T.mossTop }, true)
+      : SW ? this._mat("wallTopW", { color: 0x1b2e1e }, true)
+      : this._mat("wallTop", { map: T.stoneTop }, true);
     const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, WH, TILE), [wallSide, wallSide, wallTop, wallTop, wallSide, wallSide], wallTiles.length);
     const m4 = new THREE.Matrix4();
     wallTiles.forEach(([tx, ty], i) => {
@@ -636,17 +703,19 @@ export class Renderer3D {
     const bigFlames = [];
     const smallFlames = [];
     for (const [tx, ty] of wallTiles) {
-      if (S2 || !isOpen(tx, ty + 1)) continue;
+      if (S2 || SW || !isOpen(tx, ty + 1)) continue;
       if (S3) { const rr = roomAt(level, tx, ty + 1); if (!rr || rr.key === "battlements" || rr.sealed) continue; }
       const c = tileCenter(tx, ty);
       const z = (ty + 1) * TILE;
-      B.box(trimMat, TILE, 0.12, 0.08, c.x, 0.2, z + 0.04);
-      B.box(trimMat, TILE, 0.12, 0.08, c.x, WALL_H - 0.25, z + 0.04);
+      if (!SC) {
+        B.box(trimMat, TILE, 0.12, 0.08, c.x, 0.2, z + 0.04);
+        B.box(trimMat, TILE, 0.12, 0.08, c.x, WALL_H - 0.25, z + 0.04);
+      }
       const room = roomAt(level, tx, ty + 1);
       const h = rnd();
       if (room && room.key === "chapel" && ty === room.y0 - 1 && tx % 3 === 1) {
         B.add(new THREE.PlaneGeometry(0.9, 1.8), glassWin, c.x, 1.7, z + 0.03);
-      } else if (h < 0.18) {
+      } else if (!SC && h < 0.18) {
         B.add(new THREE.PlaneGeometry(1.15, 2.1), tapMat, c.x, 1.55, z + 0.03);
       } else if (h < 0.3) {
         B.box(ironMat, 0.18, 0.4, 0.3, c.x, 1.85, z + 0.15);
@@ -664,7 +733,7 @@ export class Renderer3D {
         if (level.grid[ty - 1][tx] !== 1) continue;
         const rr = roomAt(level, tx, ty);
         if (rr && rr.sealed) continue;
-        if (rnd() < (S2 ? 0.1 : 0.22)) {
+        if (rnd() < (OUT ? 0.08 : 0.22)) {
           const c = tileCenter(tx, ty);
           const n = 2 + Math.floor(rnd() * 3);
           addFlameSrc(c.x, 0.7, ty * TILE + 0.8, 3.2, 4.5, 0xffb060);
@@ -681,7 +750,7 @@ export class Renderer3D {
 
     // Rugs
     const rugMat = this._mat("rug", { map: T.rug });
-    for (const [x0, y0, w, h] of (S2 ? [] : S3 ? [[44, 5, 8, 3], [24, 13, 4, 6], [45, 31, 3, 8]] : [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]])) {
+    for (const [x0, y0, w, h] of (OUT ? [] : S3 ? [[44, 5, 8, 3], [24, 13, 4, 6], [45, 31, 3, 8]] : [[27, 19, 4, 13], [9, 22, 3, 11], [27, 37, 4, 6], [37, 3, 5, 9]])) {
       B.add(new THREE.PlaneGeometry(w * TILE * 0.9, h * TILE * 0.96), rugMat, (x0 + w / 2) * TILE, 0.015, (y0 + h / 2) * TILE, -Math.PI / 2);
     }
 
@@ -842,6 +911,7 @@ export class Renderer3D {
 
 
 
+    if (SW || SC) buildWoodsCourtyardProps(this, level, B, { woodMat, stoneMat, goldMat, ironMat, waxMat, earthMat, barkMat, boneMat, darkStone }, smallFlames);
     if (S3) {
       const flames = { small: smallFlames, big: bigFlames, add: addFlameSrc };
       buildStage3Props(this, level, B, { woodMat, ironMat, goldMat, stoneMat, waxMat, redCloth }, flames);
@@ -931,6 +1001,11 @@ export class Renderer3D {
         halo.position.y = 1.3;
         halo.scale.set(1.3, 1.6, 1);
         item.add(halo);
+      } else if (d.item === "cairn" || d.item === "stump" || d.item === "trough" || d.item === "cage") {
+        const halo = new THREE.Sprite(this.glowMat(d.item === "cairn" || d.item === "stump" ? 0x70e890 : 0xe0b860, 0.45));
+        halo.position.y = 0.85;
+        halo.scale.set(1.2, 1.2, 1);
+        item.add(halo);
       } else if (d.item === "portrait") {
         // Hang it on the north wall of the hall (south face of the first secret tile).
         const frame = this._mat("pframe", { color: 0x5a3a14, emissive: 0x1a0e04 });
@@ -967,6 +1042,7 @@ export class Renderer3D {
 
     this._buildBreakables(level, woodMat, ironMat);
     this._buildChambers(level, wallSide, wallTop, woodMat, ironMat, goldMat, stoneMat);
+    if (SW || SC) buildWoodsCourtyardPuzzles(this, level, { woodMat, stoneMat, goldMat, ironMat, waxMat }, glyphTexture);
     if (S3) buildStage3Rigs(this, level, { woodMat, ironMat, goldMat, stoneMat });
 
     // ---------- Iron alcoves ----------
@@ -985,6 +1061,17 @@ export class Renderer3D {
         P2(new THREE.BoxGeometry(1.8, 0.25, 1.5), alcMat, 0, 2.5, -0.1);
         P2(new THREE.ConeGeometry(0.9, 0.6, 4), alcMat, 0, 2.95, -0.1);
         P2(new THREE.BoxGeometry(1.3, 2.2, 0.04), innerMat, 0, 1.15, -0.58);
+        continue;
+      }
+      if (SW || SC) {
+        const matH = SW ? barkMat : stoneMat;
+        const roofH = SW ? this._mat("blindMoss", { color: 0x264224 }) : woodMat;
+        const P2 = (geo, mat, x, y, z) => B.add(geo, mat, c.x + x, y, c.z + z * (flip ? -1 : 1));
+        P2(new THREE.BoxGeometry(1.5, 2.3, 0.18), matH, 0, 1.15, -0.66);
+        P2(new THREE.BoxGeometry(0.18, 2.3, 1.2), matH, -0.7, 1.15, -0.08);
+        P2(new THREE.BoxGeometry(0.18, 2.3, 1.2), matH, 0.7, 1.15, -0.08);
+        P2(new THREE.BoxGeometry(1.7, 0.2, 1.45), roofH, 0, 2.4, -0.08);
+        P2(new THREE.BoxGeometry(1.25, 2.1, 0.04), innerMat, 0, 1.1, -0.56);
         continue;
       }
       const s = flip ? -1 : 1;
@@ -1401,33 +1488,34 @@ export class Renderer3D {
     scene.add(this.shockRing);
     this.shockLife = 0;
 
-    // ---------- Dust ----------
+    // ---------- Dust / Fireflies / Mist ----------
     const dust = [];
-    const S2d = level.stage === 2;
-    for (let i = 0; i < (S2d ? 900 : 400); i++) dust.push(rnd() * fw, S2d ? rnd() * 1.1 : rnd() * 3.2, rnd() * fh);
-    this.dustCount = S2d ? 900 : 400;
+    const S2d = OUT;
+    for (let i = 0; i < (S2d ? 850 : 400); i++) dust.push(rnd() * fw, S2d ? (SW ? 0.4 + rnd() * 2.1 : rnd() * 1.1) : rnd() * 3.2, rnd() * fh);
+    this.dustCount = S2d ? 850 : 400;
     const dg = new THREE.BufferGeometry();
     dg.setAttribute("position", new THREE.Float32BufferAttribute(dust, 3));
-    this.dust = new THREE.Points(dg, S2d
+    this.dust = new THREE.Points(dg, SW
+      ? new THREE.PointsMaterial({ map: T.glow, color: 0xa8f878, size: 0.36, transparent: true, opacity: 0.52, depthWrite: false, blending: THREE.AdditiveBlending })
+      : S2d
       ? new THREE.PointsMaterial({ map: T.glow, color: 0x8aa0c8, size: 1.6, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending })
       : new THREE.PointsMaterial({ color: 0xd8c8b0, size: 0.06, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.dustMist = S2d;
     scene.add(this.dust);
     this.dust.geometry.setDrawRange(0, Math.floor(this.dustCount * this.q.dust));
-    // Low creeping floor mist for the indoor stages (one cheap additive draw)
     this.floorMist = null;
-    if (!S2d) {
+    if (!S2d || SW) {
       const mist = [];
       for (let i = 0; i < 160; i++) mist.push(rnd() * fw, 0.15 + rnd() * 0.25, rnd() * fh);
       const mg = new THREE.BufferGeometry();
       mg.setAttribute("position", new THREE.Float32BufferAttribute(mist, 3));
-      this.floorMist = new THREE.Points(mg, new THREE.PointsMaterial({ map: T.glow, color: 0x8a6a8a, size: 2.2, transparent: true, opacity: 0.05, depthWrite: false, blending: THREE.AdditiveBlending }));
+      this.floorMist = new THREE.Points(mg, new THREE.PointsMaterial({ map: T.glow, color: SW ? 0x527a68 : 0x8a6a8a, size: 2.4, transparent: true, opacity: SW ? 0.08 : 0.05, depthWrite: false, blending: THREE.AdditiveBlending }));
       scene.add(this.floorMist);
     }
 
-    // ---------- Crows (Stage II): flapping silhouettes circling over the yard ----------
+    // ---------- Crows (Courtyard & Graveyards): flapping silhouettes circling overhead ----------
     this.crows = [];
-    if (S2d) {
+    if (SC || S2) {
       const crowMat = new THREE.MeshBasicMaterial({ color: 0x07060a, side: THREE.DoubleSide });
       for (let i = 0; i < 5; i++) {
         const g = new THREE.Group();
@@ -1497,9 +1585,12 @@ export class Renderer3D {
   _grade(witching) {
     if (!this.gradeTarget || this.gradeStage !== this.stage) {
       this.gradeStage = this.stage;
-      if (this.stage === 2) this.setGrade([0.95, 1.0, 1.08], [0.0, 0.006, 0.02], 0.9, true);
-      else if (this.stage === 1) this.setGrade([1.07, 0.98, 0.9], [0.012, 0.0, 0.01], 1.06, true);
-      else if (this.stage === 3) { const f = this.floorDef || { grade: [[1.1, 0.96, 0.84], [0.014, 0.004, 0], 1.0] }; this.setGrade(f.grade[0], f.grade[1], f.grade[2], true); }
+      const knd = this.stageKind || "castle";
+      if (knd === "woods") this.setGrade([0.92, 1.04, 0.96], [0.0, 0.012, 0.01], 0.94, true);
+      else if (knd === "courtyard") this.setGrade([0.98, 1.0, 1.06], [0.004, 0.006, 0.016], 0.96, true);
+      else if (knd === "graveyards") this.setGrade([0.95, 1.0, 1.08], [0.0, 0.006, 0.02], 0.9, true);
+      else if (knd === "castle") this.setGrade([1.07, 0.98, 0.9], [0.012, 0.0, 0.01], 1.06, true);
+      else if (knd === "climb") { const f = this.floorDef || { grade: [[1.1, 0.96, 0.84], [0.014, 0.004, 0], 1.0] }; this.setGrade(f.grade[0], f.grade[1], f.grade[2], true); }
     }
     const g = this.gradeTarget;
     const u = this.postMat.uniforms;
@@ -1861,6 +1952,44 @@ export class Renderer3D {
         rig.arms[1].rotation.x = windup ? -2.4 : swoop ? -1.4 : -0.3 - Math.sin(rig.walk * 0.6) * 0.3;
         rig.jaw.rotation.x = windup || swoop ? 0.55 : Math.max(0, Math.sin(t * 1.4)) * 0.15;
         rig.body.position.y += swoop ? 0.9 : 0;
+      } else if (m.kind === "wolf" || m.kind === "hound" || m.kind === "packmaster") {
+        const amt = Math.min(1, speed / 1.4);
+        const swoop = m.swooping > 0;
+        const g = rig.walk * 1.4;
+        if (rig.quad) {
+          rig.quad[0].rotation.x = Math.sin(g) * 0.65 * amt;
+          rig.quad[1].rotation.x = -Math.sin(g) * 0.65 * amt;
+          rig.quad[2].rotation.x = -Math.sin(g + 0.4) * 0.65 * amt;
+          rig.quad[3].rotation.x = Math.sin(g + 0.4) * 0.65 * amt;
+        }
+        rig.body.position.y = swoop ? 0.35 : Math.abs(Math.sin(g)) * 0.08 * amt;
+        rig.torso.rotation.x = swoop ? -0.18 : windup ? -0.22 : hurt ? 0.2 : 0.04;
+        if (rig.head) rig.head.rotation.x = windup ? -0.25 : 0.05;
+        if (rig.jaw) rig.jaw.rotation.x = windup || swoop ? 0.55 : Math.max(0, Math.sin(t * 5 + m.id)) * 0.16;
+        if (rig.tail) rig.tail.rotation.y = Math.sin(t * 7 + m.id) * 0.35;
+        if (rig.chain) rig.chain.forEach((l) => { l.rotation.x = Math.sin(g) * 0.25; });
+      } else if (m.kind === "stalker") {
+        this._animateWalk(rig, rig.walk * 0.9, Math.min(1, speed / 1.2));
+        rig.arms[0].rotation.x = windup ? -2.2 : -0.6 + Math.sin(rig.walk) * 0.45;
+        rig.arms[1].rotation.x = windup ? -2.2 : -0.6 - Math.sin(rig.walk) * 0.45;
+        if (rig.elbows) { rig.elbows[0].rotation.x = -0.35; rig.elbows[1].rotation.x = -0.35; }
+        rig.torso.rotation.x = hurt ? -0.18 : windup ? 0.4 : 0.22;
+        if (rig.head) rig.head.rotation.z = Math.sin(t * 1.1 + m.id) * 0.18;
+      } else if (m.kind === "wisp") {
+        rig.float.position.y = 1.35 + Math.sin(t * 2.6 + m.id) * 0.16;
+        rig.float.rotation.y = t * 1.2;
+        for (const w of rig.wisps) {
+          const a = t * 2.8 + w.phase + m.id;
+          w.w.position.set(Math.cos(a) * w.r, w.h + Math.sin(t * 4 + w.phase) * 0.14 - (windup ? 0.25 : 0), Math.sin(a) * w.r);
+        }
+      } else if (m.kind === "sentry" || m.kind === "warden") {
+        const amt = Math.min(1, speed / 1.1);
+        const swoop = m.swooping > 0;
+        this._animateWalk(rig, rig.walk * 0.8, swoop ? 0 : amt);
+        rig.arms[0].rotation.x = windup ? -1.4 : -0.4 + Math.sin(rig.walk * 0.8) * 0.25;
+        rig.arms[1].rotation.x = windup ? -2.5 : swoop ? -1.8 : -0.7 - Math.sin(rig.walk * 0.8) * 0.25;
+        if (rig.elbows) rig.elbows[1].rotation.x = windup ? -0.3 : -0.45;
+        rig.torso.rotation.x = swoop ? 0.4 : windup ? -0.18 : 0.12;
       } else if (m.kind === "maiden") {
         rig.limbs.forEach((l, i) => { l.rotation.x = Math.sin(rig.walk * 1.6 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.6; });
         rig.body.position.y = windup ? 0.25 : Math.abs(Math.sin(rig.walk * 1.6)) * 0.06;
@@ -1973,7 +2102,7 @@ export class Renderer3D {
     }
 
     const pagesFound = player ? player.pagesFound : 0;
-    const open = pagesFound >= 5 && !(level && level.stage === 3 && !level.bossDead);
+    const open = pagesFound >= 5 && !(level && level.bossSpawn && !level.bossDead);
     this.seals.forEach((m, i) => m.color.setHex(i < pagesFound ? 0x3a2a10 : 0xc41230));
     this.bars.position.y += ((open ? WALL_H - 0.4 : 0) - this.bars.position.y) * Math.min(1, dt * 2);
     this.gateLight.color.setHex(open ? 0xe7c873 : 0xc41230);
@@ -2176,7 +2305,7 @@ export class Renderer3D {
         ? new THREE.Vector3(((room.x0 + room.x1 + 1) / 2) * TILE, 0, ((room.y0 + room.y1 + 1) / 2) * TILE)
         : focus;
       const desired = camF.clone().add(this.camOffset);
-      if (this.stage === 3 && this.floorDef) {
+      if (this.stageKind === "climb" && this.floorDef) {
         // the high riddle-room cameras sit beyond the floor fog: push it back while inside
         const far = room && room.sealed;
         this.scene.fog.near = far ? 20 : this.floorDef.open ? 10 : 8.5;
@@ -2208,12 +2337,15 @@ export class Renderer3D {
       this.postMat.uniforms.uGlitch.value = lowSan > 0 ? lowSan * (0.5 + 0.5 * Math.sin(t * 9)) : 0;
     }
 
-    if (this.stage === 2) this.fogColor.setHex(witching ? 0x241018 : 0x1a2232);
-    else if (this.stage === 3 && this.floorDef) this.fogColor.setHex(witching ? 0x1c0408 : this.floorDef.fog);
+    const sk = this.stageKind || "castle";
+    if (sk === "woods") this.fogColor.setHex(witching ? 0x220c14 : 0x101c1a);
+    else if (sk === "courtyard") this.fogColor.setHex(witching ? 0x241018 : 0x161c2a);
+    else if (sk === "graveyards") this.fogColor.setHex(witching ? 0x241018 : 0x1a2232);
+    else if (sk === "climb" && this.floorDef) this.fogColor.setHex(witching ? 0x1c0408 : this.floorDef.fog);
     else this.fogColor.setHex(witching ? 0x1c0408 : 0x0a0610);
     // on the tower top the moon sits small in the corner, clear of the gargoyle's approach
-    if (this.stage === 3) this.postMat.uniforms.uMoonP.value.set(0.17, 0.7, 0.7); else this.postMat.uniforms.uMoonP.value.set(0.7, 0.75, 1.0);
-    this.postMat.uniforms.uMoon.value = (this.stage === 2 || (this.stage === 3 && this.floorDef && this.floorDef.open)) && !inMenu ? 1 : 0;
+    if (sk === "climb") this.postMat.uniforms.uMoonP.value.set(0.17, 0.7, 0.7); else this.postMat.uniforms.uMoonP.value.set(0.7, 0.75, 1.0);
+    this.postMat.uniforms.uMoon.value = ((sk === "woods" || sk === "courtyard" || sk === "graveyards") || (sk === "climb" && this.floorDef && this.floorDef.open)) && !inMenu ? 1 : 0;
     this._grade(witching);
     this.postMat.uniforms.uRedShift.value = dangerRed * 0.45;
     this.postMat.uniforms.uIce.value = countess && countess.state === AI_STATE.FROZEN && !inMenu ? 1 : 0;
@@ -2236,7 +2368,7 @@ export class Renderer3D {
     const barrels = list.filter((b) => b.type === "barrel" || b.type === "urn" || b.type === "cask");
     const shelves = list.filter((b) => b.type === "bookshelf");
     const plank = this._mat("crate-plank", { map: this.T.wood, emissive: 0x120a04 });
-    if (level.stage === 2) {
+    if (level.kind === "graveyards") {
       // Coffins (big) and funeral urns (small) share the crate/barrel instancing slots.
       const coffinWood = this._mat("coffin-wood", { map: this.T.wood, color: 0x6a4a3a, emissive: 0x0a0604 });
       const brass = this._mat("coffin-brass", { color: 0xb89a50, emissive: 0x2a1c04 });
@@ -2253,8 +2385,9 @@ export class Renderer3D {
     this.crateTop = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.7, 0.8), plank, Math.max(1, crates.length));
     this.crateBand = new THREE.InstancedMesh(new THREE.BoxGeometry(1.26, 0.1, 1.26), ironMat, Math.max(1, crates.length));
     // Stage III wine casks: bellied, darker oak
-    const caskMat = level.stage === 3 ? this._mat("cask-wood", { map: this.T.wood, color: 0x8a5a3a, emissive: 0x0c0604 }) : woodMat;
-    this.barrelBody = new THREE.InstancedMesh(level.stage === 3 ? new THREE.CylinderGeometry(0.44, 0.44, 1.1, 8).scale(1.08, 1, 1.08) : new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), caskMat, Math.max(1, barrels.length));
+    const isCask = level.kind === "climb";
+    const caskMat = isCask ? this._mat("cask-wood", { map: this.T.wood, color: 0x8a5a3a, emissive: 0x0c0604 }) : woodMat;
+    this.barrelBody = new THREE.InstancedMesh(isCask ? new THREE.CylinderGeometry(0.44, 0.44, 1.1, 8).scale(1.08, 1, 1.08) : new THREE.CylinderGeometry(0.48, 0.48, 1.1, 8), caskMat, Math.max(1, barrels.length));
     this.barrelBand = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 8), ironMat, Math.max(1, barrels.length * 2));
     }
     // Stage III bookshelves: a tall case and its spilling row of books
@@ -2565,6 +2698,7 @@ export class Renderer3D {
 
   _updateChambers(level, dt, t) {
     if (!level || !level.lockedRooms || !this.doorRigs) return;
+    if (level.kind === "woods" || level.kind === "courtyard") updateWoodsCourtyard(this, level, dt, t);
     for (const lr of level.lockedRooms) {
       const rig = this.doorRigs.find((r) => r.key === lr.key);
       if (rig) {

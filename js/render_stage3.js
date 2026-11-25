@@ -364,7 +364,7 @@ export function buildStage3Rigs(r, level, M) {
 }
 
 export function updateStage3(r, level, dt, t) {
-  if (!level || level.stage !== 3) return;
+  if (!level || level.kind !== "climb") return;
   for (const sr of r.stairRigs || []) {
     const st = level.stairs[sr.id] || {};
     const target = sr.dir === "down" || st.open ? 1 : 0;
