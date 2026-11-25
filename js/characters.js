@@ -664,6 +664,188 @@ export function buildMonster(kind, T, psx) {
     }
     rig.torso = torso;
     rig.eyeParent = head; rig.eyeY = 0.08; rig.eyeZ = 0.36; rig.eyeColor = 0xff6a20; rig.barY = 4.2; rig.eyeScale = 0.3;
+  } else if (kind === "wolf" || kind === "hound" || kind === "packmaster") {
+    // Original quadruped beasts: Briar Wolf, iron-collared Castle Hound, and the massive Packmaster mini-boss.
+    const boss = kind === "packmaster";
+    const hound = kind === "hound";
+    const sc = boss ? 1.45 : hound ? 1.06 : 0.96;
+    const fur = M({ map: T.wolfFur || T.stone, color: boss ? 0x625a64 : hound ? 0x523e34 : 0x767882 });
+    const ruff = M({ color: boss ? 0x38343c : hound ? 0x2e221c : 0x565862 });
+    const bone = M({ color: 0xded6c4 });
+    const iron = M({ color: 0x363640 });
+    const torso = pivot(body, 0, 0.72 * sc, 0);
+    add(torso, box(0.46 * sc, 0.42 * sc, 0.95 * sc), fur, 0, 0, 0);
+    add(torso, box(0.54 * sc, 0.48 * sc, 0.42 * sc), ruff, 0, 0.04 * sc, 0.28 * sc); // shoulder ruff
+    if (hound || boss) {
+      add(torso, box(0.52 * sc, 0.44 * sc, 0.12 * sc), iron, 0, 0.04 * sc, 0.48 * sc); // iron collar
+      for (const sx of [-0.26, 0, 0.26]) add(torso, cone(0.035 * sc, 0.12 * sc, 4), bone, sx * sc, 0.26 * sc, 0.48 * sc);
+    }
+    if (boss) {
+      // broken iron chain + scarred spine ridges
+      for (let i = 0; i < 4; i++) add(torso, cone(0.055 * sc, 0.22 * sc, 4), ruff, 0, 0.28 * sc, (0.3 - i * 0.22) * sc).rotation.x = -0.3;
+      const ch = pivot(torso, 0, -0.14 * sc, 0.52 * sc);
+      for (let i = 0; i < 3; i++) add(ch, box(0.06, 0.16, 0.06), iron, 0, -0.08 - i * 0.14, 0.02 * i);
+      rig.chain = [ch];
+    }
+    const head = pivot(torso, 0, 0.14 * sc, 0.54 * sc);
+    add(head, box(0.38 * sc, 0.34 * sc, 0.38 * sc), fur, 0, 0.04 * sc, 0.08 * sc);
+    add(head, box(0.22 * sc, 0.16 * sc, 0.34 * sc), ruff, 0, -0.02 * sc, 0.3 * sc); // snout
+    for (const sx of [-0.13, 0.13]) {
+      add(head, cone(0.06 * sc, 0.22 * sc, 4), fur, sx * sc, 0.26 * sc, 0.04 * sc).rotation.z = sx > 0 ? -0.15 : 0.15;
+    }
+    const jaw = pivot(head, 0, -0.1 * sc, 0.12 * sc);
+    add(jaw, box(0.18 * sc, 0.08 * sc, 0.28 * sc), ruff, 0, -0.02 * sc, 0.16 * sc);
+    for (const sx of [-0.07, 0.07]) add(jaw, cone(0.022 * sc, 0.08 * sc, 4), bone, sx * sc, 0.04 * sc, 0.26 * sc);
+    const tail = pivot(torso, 0, 0.08 * sc, -0.48 * sc);
+    add(tail, box(0.14 * sc, 0.14 * sc, (hound ? 0.26 : 0.52) * sc), ruff, 0, 0, (hound ? -0.13 : -0.24) * sc);
+    rig.head = head; rig.jaw = jaw; rig.tail = tail; rig.torso = torso;
+    rig.quad = [];
+    const legPos = [[-0.18, 0.34], [0.18, 0.34], [-0.18, -0.34], [0.18, -0.34]];
+    for (const [lx, lz] of legPos) {
+      const lp = pivot(body, lx * sc, 0.62 * sc, lz * sc);
+      add(lp, box(0.13 * sc, 0.36 * sc, 0.15 * sc), fur, 0, -0.18 * sc, 0);
+      add(lp, box(0.1 * sc, 0.3 * sc, 0.12 * sc), ruff, 0, -0.46 * sc, 0.02 * sc);
+      add(lp, box(0.13 * sc, 0.07 * sc, 0.18 * sc), ruff, 0, -0.59 * sc, 0.04 * sc);
+      rig.quad.push(lp);
+    }
+    rig.eyeParent = head; rig.eyeY = 0.06 * sc; rig.eyeZ = 0.28 * sc;
+    rig.eyeColor = boss ? 0xff7820 : hound ? 0xff3828 : 0xffe066;
+    rig.eyeScale = boss ? 0.24 : 0.14;
+    rig.barY = boss ? 2.4 : 1.55;
+  } else if (kind === "stalker") {
+    // Original forest revenant: Thorn Stalker — bark-wrapped deadwood ribs and an antlered stag-skull.
+    const bark = M({ map: T.barkSkin || T.wood, color: 0x74624c });
+    const moss = M({ color: 0x3b5c34 });
+    const bone = M({ color: 0xdad2be });
+    const legs = [];
+    for (const sx of [-0.18, 0.18]) {
+      const hip = pivot(body, sx, 1.05, 0);
+      add(hip, box(0.16, 0.56, 0.16), bark, 0, -0.28, 0);
+      add(hip, box(0.13, 0.52, 0.14), bark, 0, -0.78, 0);
+      add(hip, box(0.2, 0.08, 0.28), moss, 0, -1.01, 0.05);
+      legs.push(hip);
+    }
+    rig.legs = legs;
+    const torso = pivot(body, 0, 1.05, 0);
+    add(torso, box(0.42, 0.85, 0.28), bark, 0, 0.45, 0);
+    add(torso, box(0.48, 0.34, 0.34), moss, 0, 0.72, 0); // mossy mantle
+    for (const ry of [0.28, 0.46, 0.64]) add(torso, box(0.48, 0.06, 0.32), bone, 0, ry, 0.02);
+    const head = pivot(torso, 0, 1.0, 0.08);
+    add(head, box(0.28, 0.3, 0.36), bone, 0, 0.05, 0.04); // stag skull
+    add(head, box(0.14, 0.12, 0.24), bone, 0, -0.02, 0.26);
+    for (const sx of [-1, 1]) {
+      const a1 = add(head, box(0.05, 0.55, 0.05), bark, sx * 0.14, 0.38, -0.04);
+      a1.rotation.z = -sx * 0.45; a1.rotation.x = -0.15;
+      add(head, box(0.04, 0.32, 0.04), bark, sx * 0.32, 0.52, 0.06).rotation.z = -sx * 0.1;
+      add(head, box(0.04, 0.26, 0.04), bark, sx * 0.22, 0.64, -0.1).rotation.x = -0.5;
+    }
+    rig.head = head; rig.torso = torso; rig.elbows = [];
+    for (const sx of [-0.32, 0.32]) {
+      const sh = pivot(torso, sx, 0.82, 0);
+      add(sh, box(0.12, 0.62, 0.12), bark, 0, -0.3, 0);
+      const el = pivot(sh, 0, -0.6, 0);
+      add(el, box(0.1, 0.58, 0.1), bark, 0, -0.28, 0);
+      for (const fx of [-0.04, 0.04]) add(el, cone(0.025, 0.22, 4), bone, fx, -0.64, 0.04).rotation.x = Math.PI;
+      rig.arms.push(sh); rig.elbows.push(el);
+    }
+    rig.eyeParent = head; rig.eyeY = 0.07; rig.eyeZ = 0.24; rig.eyeColor = 0x98ff70; rig.barY = 2.65;
+  } else if (kind === "wisp") {
+    // Marsh Wisp: a charred skull-lantern orbited by pale-green bog flames.
+    const iron = M({ color: 0x26262e });
+    const bone = M({ color: 0xc8c2b0 });
+    const glow = M({ color: 0x86ffa8, emissive: 0x3ad86c });
+    const float = pivot(body, 0, 1.35, 0);
+    add(float, box(0.24, 0.26, 0.24), bone, 0, 0, 0);
+    add(float, box(0.3, 0.05, 0.3), iron, 0, 0.16, 0);
+    add(float, box(0.14, 0.14, 0.14), glow, 0, -0.02, 0, false);
+    rig.float = float;
+    rig.wisps = [];
+    for (let i = 0; i < 5; i++) {
+      const w = pivot(body, 0, 0, 0);
+      add(w, cone(0.09, 0.28, 5), glow, 0, 0.08, 0, false);
+      add(w, ico(0.08, 0), glow, 0, -0.04, 0, false);
+      rig.wisps.push({ w, phase: i * 1.25, r: 0.36 + (i % 2) * 0.16, h: 1.15 + (i % 3) * 0.22 });
+    }
+    rig.eyeParent = float; rig.eyeY = 0.02; rig.eyeZ = 0.13; rig.eyeColor = 0x86ffa8; rig.barY = 2.25;
+  } else if (kind === "sentry" || kind === "warden") {
+    // Undead Castle Sentry & The Gate Warden (Stage 2 mini-boss): armored gatehouse guards with halberd / great-axe.
+    const boss = kind === "warden";
+    const sc = boss ? 1.42 : 1.05;
+    const plate = M({ map: T.sentryPlate || T.stone, color: boss ? 0x626674 : 0x848a94 });
+    const dark = M({ color: 0x28262e });
+    const cloth = M({ color: boss ? 0x7c1020 : 0x323a52 });
+    const steel = M({ color: 0xc2c8d2 });
+    const legs = [], knees = [];
+    for (const sx of [-0.15, 0.15]) {
+      const hip = pivot(body, sx * sc, 0.96 * sc, 0);
+      add(hip, box(0.2 * sc, 0.48 * sc, 0.22 * sc), plate, 0, -0.24 * sc, 0);
+      const knee = pivot(hip, 0, -0.48 * sc, 0);
+      add(knee, box(0.18 * sc, 0.46 * sc, 0.2 * sc), plate, 0, -0.22 * sc, 0);
+      add(knee, box(0.2 * sc, 0.12 * sc, 0.3 * sc), dark, 0, -0.44 * sc, 0.05 * sc);
+      legs.push(hip); knees.push(knee);
+    }
+    rig.legs = legs; rig.knees = knees;
+    const torso = pivot(body, 0, 0.96 * sc, 0);
+    add(torso, box(0.52 * sc, 0.66 * sc, 0.34 * sc), plate, 0, 0.36 * sc, 0);
+    add(torso, box(0.46 * sc, 0.56 * sc, 0.36 * sc), cloth, 0, 0.24 * sc, 0); // surcoat
+    for (const sx of [-0.34, 0.34]) {
+      add(torso, box(0.22 * sc, 0.18 * sc, 0.28 * sc), plate, sx * sc, 0.66 * sc, 0); // pauldrons
+      if (boss) add(torso, cone(0.05 * sc, 0.24 * sc, 4), steel, sx * sc, 0.82 * sc, 0);
+    }
+    if (boss) {
+      const cape = pivot(torso, 0, 0.66 * sc, -0.18 * sc);
+      add(cape, box(0.66 * sc, 1.15 * sc, 0.05), cloth, 0, -0.58 * sc, 0);
+      rig.cape = cape;
+    }
+    const head = pivot(torso, 0, 0.78 * sc, 0);
+    add(head, box(0.28 * sc, 0.28 * sc, 0.3 * sc), dark, 0, 0.1 * sc, 0);
+    add(head, box(0.38 * sc, 0.12 * sc, 0.4 * sc), plate, 0, 0.18 * sc, 0); // kettle helm brim
+    add(head, cone(0.22 * sc, 0.24 * sc, 6), plate, 0, 0.3 * sc, 0);
+    if (boss) {
+      for (const sx of [-0.18, 0.18]) {
+        const horn = add(head, cone(0.055 * sc, 0.36 * sc, 5), steel, sx * sc, 0.3 * sc, 0.02);
+        horn.rotation.z = sx > 0 ? -0.45 : 0.45;
+      }
+    }
+    rig.head = head; rig.torso = torso; rig.elbows = [];
+    for (const sx of [-0.34, 0.34]) {
+      const sh = pivot(torso, sx * sc, 0.62 * sc, 0);
+      add(sh, box(0.16 * sc, 0.42 * sc, 0.16 * sc), plate, 0, -0.21 * sc, 0);
+      const el = pivot(sh, 0, -0.42 * sc, 0);
+      add(el, box(0.14 * sc, 0.38 * sc, 0.14 * sc), plate, 0, -0.18 * sc, 0);
+      if (sx > 0) {
+        // Halberd (sentry) or Great-Axe (warden)
+        add(el, box(0.06 * sc, (boss ? 1.85 : 1.65) * sc, 0.06 * sc), dark, 0, -0.25 * sc, 0.45 * sc).rotation.x = Math.PI / 2;
+        add(el, box(0.05, (boss ? 0.56 : 0.4) * sc, (boss ? 0.38 : 0.26) * sc), steel, 0, -0.25 * sc, (boss ? 1.25 : 1.1) * sc);
+        if (!boss) add(el, cone(0.05, 0.28, 4), steel, 0, -0.25 * sc, 1.38 * sc).rotation.x = Math.PI / 2;
+      } else if (boss) {
+        // Gate Warden carries a smoking iron watch-lantern
+        const ember = M({ color: 0xff8020, emissive: 0xff5010 });
+        add(el, box(0.18, 0.26, 0.18), dark, 0, -0.48 * sc, 0.14);
+        add(el, box(0.1, 0.14, 0.1), ember, 0, -0.48 * sc, 0.14, false);
+      }
+      rig.arms.push(sh); rig.elbows.push(el);
+    }
+    rig.eyeParent = head; rig.eyeY = 0.1 * sc; rig.eyeZ = 0.17 * sc;
+    rig.eyeColor = boss ? 0xff5820 : 0xffaa44;
+    rig.eyeScale = boss ? 0.22 : 0.14;
+    rig.barY = boss ? 3.35 : 2.5;
+  } else if (kind === "crows") {
+    // Carrion Crows: swirling murder of sharp-beaked black crows.
+    const feather = M({ color: 0x16161c });
+    const wing = M({ color: 0x262832, side: THREE.DoubleSide });
+    const beak = M({ color: 0xb6a88c });
+    for (let i = 0; i < 7; i++) {
+      const b = pivot(body, 0, 0, 0);
+      add(b, box(0.12, 0.11, 0.26), feather, 0, 0, 0);
+      add(b, cone(0.03, 0.12, 4), beak, 0, 0.02, 0.18).rotation.x = Math.PI / 2;
+      const wl = pivot(b, -0.06, 0.02, 0);
+      add(wl, box(0.36, 0.02, 0.16), wing, -0.18, 0, 0);
+      const wr = pivot(b, 0.06, 0.02, 0);
+      add(wr, box(0.36, 0.02, 0.16), wing, 0.18, 0, 0);
+      rig.bats.push({ b, wl, wr, phase: i * 0.9, r: 0.28 + (i % 3) * 0.22, h: 1.1 + (i % 4) * 0.22 });
+    }
+    rig.eyeY = 1.4; rig.eyeZ = 0.12; rig.eyeColor = 0xffcc44; rig.barY = 2.15;
   } else {
     // Bat swarm
     const fur = M({ color: 0x2a1c24 });

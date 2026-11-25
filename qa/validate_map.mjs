@@ -1,7 +1,7 @@
 import { createLevel } from "/workspace/bathory-game/js/map.js";
 import { FLOORS, STAIRS, traceBeam } from "/workspace/bathory-game/js/stage3.js";
 let bad = 0;
-for (const st of [1, 2, 3]) {
+for (const st of [1, 2, 3, 4, 5]) {
   const L = createLevel(st);
   const g = L.grid; const issues = [];
   const chk = (n, tx, ty, want = [0]) => { if (!want.includes(g[ty][tx])) issues.push(`${n} @${tx},${ty}=${g[ty][tx]}`); };
@@ -46,7 +46,8 @@ for (const st of [1, 2, 3]) {
   for (const lr of L.lockedRooms) for (const it of lr.items) { const k = it.tx + "," + it.ty; occ[k] = (occ[k] || []).concat("item:" + it.sym); }
   for (const [k, v] of Object.entries(occ)) if (v.length > 1) issues.push("overlap " + k + " " + v);
   for (const p of [...L.pages, ...L.mirrors, ...L.bolts, ...L.alcoves, ...L.spawns]) { const k = p.tx + "," + p.ty; if (occ[k]) issues.push("item on prop " + k); }
-  if (st === 3) {
+  if (L.bossSpawn) { const bs = [Math.floor(L.bossSpawn.x / 44), Math.floor(L.bossSpawn.y / 44)]; chk("boss", ...bs); reach("boss", ...bs); }
+  if (L.kind === "climb") {
     // every stair arrival must be open floor on the right floor; per-floor spawn / waypoint counts
     for (const s of L.stairs) {
       chk(`arrive ${s.floor}${s.dir}`, ...s.arrive); reach(`stair ${s.floor}${s.dir}`, s.tx, s.ty);

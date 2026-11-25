@@ -8,6 +8,16 @@ export const MONSTER_TYPES = {
   // Crate slimes (v0.5): bouncy, split once into two minis on death.
   slime: { key: "slime", name: "Crate Slime", hp: 25, speed: 46, chaseSpeed: 92, dmg: 7, reach: 18, windup: 0.32, cooldown: 1.0, sight: 300, radius: 12, knockResist: 0.9, hops: true },
   slimelet: { key: "slimelet", name: "Mini Slime", hp: 9, speed: 60, chaseSpeed: 118, dmg: 4, reach: 14, windup: 0.22, cooldown: 0.8, sight: 300, radius: 8, knockResist: 0.6, hops: true },
+  // Stage I — The Woods
+  wolf: { key: "wolf", name: "Briar Wolf", hp: 26, speed: 58, chaseSpeed: 120, dmg: 8, reach: 20, windup: 0.28, cooldown: 0.9, sight: 340, radius: 12, knockResist: 0.85 },
+  stalker: { key: "stalker", name: "Thorn Stalker", hp: 52, speed: 34, chaseSpeed: 64, dmg: 13, reach: 24, windup: 0.55, cooldown: 1.35, sight: 300, radius: 13, knockResist: 1.3 },
+  wisp: { key: "wisp", name: "Marsh Wisp", hp: 18, speed: 66, chaseSpeed: 98, dmg: 5, reach: 20, windup: 0.2, cooldown: 0.8, sight: 360, radius: 12, knockResist: 1.3, drainsOil: true },
+  packmaster: { key: "packmaster", name: "The Old Packmaster", hp: 220, speed: 38, chaseSpeed: 84, dmg: 18, reach: 28, windup: 0.65, cooldown: 1.35, sight: 460, radius: 17, knockResist: 4, swoops: true, boss: true, rise: 1.4 },
+  // Stage II — The Courtyard
+  hound: { key: "hound", name: "Castle Hound", hp: 34, speed: 62, chaseSpeed: 128, dmg: 10, reach: 20, windup: 0.28, cooldown: 0.9, sight: 350, radius: 12, knockResist: 1.0 },
+  sentry: { key: "sentry", name: "Corrupted Sentry", hp: 58, speed: 34, chaseSpeed: 62, dmg: 15, reach: 26, windup: 0.55, cooldown: 1.3, sight: 310, radius: 13, knockResist: 1.6 },
+  crows: { key: "crows", name: "Carrion Crows", hp: 22, speed: 74, chaseSpeed: 112, dmg: 6, reach: 20, windup: 0.18, cooldown: 0.75, sight: 380, radius: 13, knockResist: 1.4, drainsOil: true },
+  warden: { key: "warden", name: "The Gate Warden", hp: 270, speed: 32, chaseSpeed: 64, dmg: 21, reach: 30, windup: 0.75, cooldown: 1.45, sight: 480, radius: 18, knockResist: 4.5, swoops: true, boss: true, rise: 1.5 },
   // Stage II — The Graveyards
   skeleton: { key: "skeleton", name: "Grave-Risen", hp: 36, speed: 46, chaseSpeed: 84, dmg: 10, reach: 20, windup: 0.4, cooldown: 1.1, sight: 320, radius: 12, knockResist: 0.9, rise: 1.4 },
   brute: { key: "brute", name: "Gravedigger Brute", hp: 95, speed: 28, chaseSpeed: 54, dmg: 22, reach: 30, windup: 0.85, cooldown: 1.7, sight: 300, radius: 16, knockResist: 2.4 },
@@ -221,7 +231,7 @@ export class Monster {
         }
         dir = pathing.steer(this.x, this.y, goal.x, goal.y);
         speed = T.chaseSpeed;
-        if (this.kind === "bats") {
+        if (this.kind === "bats" || this.kind === "wisp" || this.kind === "crows") {
           const wob = Math.sin(performance.now() / 180 + this.id) * 0.6;
           const c = Math.cos(wob), s = Math.sin(wob);
           dir = { x: dir.x * c - dir.y * s, y: dir.x * s + dir.y * c };

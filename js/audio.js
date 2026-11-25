@@ -302,6 +302,10 @@ export class SoundEngine {
   }
 
   playMonsterSpot(kind) {
+    if (kind === "wolf" || kind === "hound" || kind === "packmaster") { this._tone(kind === "packmaster" ? 130 : 210, 0.45, { type: "sawtooth", gain: 0.08, to: 85 }); return; }
+    if (kind === "crows") { for (let i = 0; i < 3; i++) this._tone(900 + Math.random() * 400, 0.09, { type: "sawtooth", gain: 0.05, delay: i * 0.08, to: 520 }); return; }
+    if (kind === "wisp") { this._tone(580, 0.55, { type: "sine", gain: 0.06, to: 880 }); return; }
+    if (kind === "warden") { this._tone(80, 0.75, { type: "sawtooth", gain: 0.11, to: 50 }); return; }
     if (kind === "bats") { for (let i = 0; i < 4; i++) this._tone(3200 + Math.random() * 1500, 0.05, { type: "square", gain: 0.035, delay: i * 0.06 }); return; }
     if (kind === "maiden") { this._tone(700, 0.5, { type: "sawtooth", gain: 0.05, to: 1200 }); return; }
     if (kind === "dweller") { this._tone(70, 0.9, { type: "sine", gain: 0.12, to: 40 }); this._noise(0.7, { type: "lowpass", freq: 250, gain: 0.16, decay: 0.7 }); return; }

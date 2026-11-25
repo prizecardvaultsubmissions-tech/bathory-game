@@ -367,6 +367,69 @@ export function upgradeTextures(T) {
       }
     }
   });
+
+  // --- Stage I & II: The Woods & The Courtyard ---
+  T.forestFloor = tex(64, 64, (P) => {
+    const r = seeded(621); const n = fbm(622, 64, 4, 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const v = n(x, y);
+      const g = (v - 0.5) * 44 + (r() - 0.5) * 14;
+      if (v < 0.42) P.set(x, y, 56 + g, 42 + g * 0.8, 30 + g * 0.6); // damp loam
+      else P.set(x, y, 36 + g * 0.7, 62 + g, 34 + g * 0.6);          // deep forest moss
+    }
+    for (let i = 0; i < 140; i++) { // fallen pine needles & twigs
+      const x = Math.floor(r() * 64), y = Math.floor(r() * 64);
+      const dx = r() < 0.5 ? 1 : -1;
+      for (let k = 0; k < 3; k++) P.set((x + k * dx + 64) & 63, (y + k) & 63, 72 + r() * 26, 52 + r() * 18, 30);
+    }
+  });
+  T.mossTrail = tex(64, 64, (P) => {
+    const r = seeded(631); const n = fbm(632, 64, 4, 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const v = n(x, y);
+      const rut = Math.abs(Math.sin(x * 0.2)) < 0.35 ? -10 : 0;
+      const g = (v - 0.5) * 40 + (r() - 0.5) * 12 + rut;
+      P.set(x, y, 88 + g, 72 + g * 0.9, 52 + g * 0.7);
+      if (x < 8 || x > 55) P.tint(x, y, 42, 74, 38, 0.55); // mossy path shoulder
+    }
+    for (let i = 0; i < 45; i++) { const x = Math.floor(r() * 64), y = Math.floor(r() * 64); P.set(x, y, 126, 118, 106); P.set((x + 1) & 63, y, 58, 48, 38); }
+  });
+  T.barkWall = tex(64, 64, (P) => {
+    const r = seeded(641); const n = fbm(642, 64, 4, 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const ridge = Math.sin(x * 0.65 + n(x, y) * 5) * 18;
+      const crack = Math.abs(Math.sin(x * 0.45 + n(x * 2, y) * 3)) < 0.14 ? -22 : 0;
+      const g = (n(x, y) - 0.5) * 24 + (r() - 0.5) * 8 + ridge + crack;
+      P.set(x, y, 56 + g, 42 + g * 0.85, 32 + g * 0.7);
+      if (n(x + 19, y + 7) > 0.68) P.tint(x, y, 48, 78, 42, 0.5); // lichen & moss
+    }
+  });
+  T.timberWall = planks(651, { pal: [92, 64, 42], pw: 10, horizontal: true, dark: 8 });
+  T.bogWater = tex(64, 64, (P) => {
+    const r = seeded(661); const n = fbm(662, 64, 4, 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const v = n(x, y);
+      const rip = Math.sin(x * 0.35 + y * 0.25 + v * 6) * 8;
+      P.set(x, y, 24 + v * 20 + rip, 44 + v * 32 + rip, 36 + v * 24 + rip);
+      if (v > 0.7) P.tint(x, y, 66, 98, 56, 0.45); // duckweed scum
+    }
+  });
+  T.cobbleYard = voronoiStones(671, { pal: [88, 86, 92], grout: [24, 28, 24], cells: 24, var_: 24, moss: 0.45 });
+  T.baileyWall = brickWall(681, { pal: [84, 80, 88], mortar: [28, 28, 32], bw: 24, bh: 12, moss: 0.45, soot: 0.5, var_: 24 });
+  T.stableStraw = tex(64, 64, (P) => {
+    const r = seeded(691); const n = fbm(692, 64, 4, 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const g = (n(x, y) - 0.5) * 34 + (r() - 0.5) * 10;
+      P.set(x, y, 78 + g, 64 + g * 0.85, 44 + g * 0.6);
+    }
+    for (let i = 0; i < 180; i++) {
+      const x = Math.floor(r() * 64), y = Math.floor(r() * 64), L = 3 + Math.floor(r() * 4);
+      const dx = r() < 0.5 ? 1 : -1;
+      for (let k = 0; k < L; k++) P.set((x + k * dx + 64) & 63, (y + (k >> 1)) & 63, 152 + r() * 40, 126 + r() * 30, 62 + r() * 18);
+    }
+  });
+  T.kennelFlag = flagstones(701, { pal: [64, 66, 72], grout: [20, 20, 24], slab: 16, var_: 22, blood: 2, stains: 4 });
+  T.oakDoor = planks(711, { pal: [72, 48, 32], pw: 12, dark: 10 });
   return T;
 }
 
@@ -450,6 +513,31 @@ export function upgradeCharacterTextures(T) {
       if (!hole && (x % 7 === 0)) P.mul(x, y, 0.8);
     }
     for (let i = 0; i < 3; i++) bloodSplat(P, r, Math.floor(r() * 32), Math.floor(r() * 32), 2, 0.8);
+  });
+
+  T.wolfFur = tex(32, 32, (P) => {
+    const r = seeded(971); const n = fbm(972, 32, 3, 4);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      const tuft = (y % 4 === 0 ? -12 : 0) + (n(x * 2, y * 2) - 0.5) * 28 + (r() - 0.5) * 12;
+      P.set(x, y, 74 + tuft, 72 + tuft, 78 + tuft);
+    }
+  });
+  T.barkSkin = tex(32, 32, (P) => {
+    const r = seeded(981); const n = fbm(982, 32, 3, 4);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      const ridge = Math.sin(x * 0.9 + n(x, y) * 4) * 16 + (r() - 0.5) * 10;
+      P.set(x, y, 64 + ridge, 50 + ridge * 0.8, 36 + ridge * 0.6);
+      if (n(x + 9, y) > 0.66) P.tint(x, y, 52, 86, 44, 0.5);
+    }
+  });
+  T.sentryPlate = tex(32, 32, (P) => {
+    const r = seeded(991); const n = fbm(992, 32, 3, 4);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      const g = (n(x * 2, y * 2) - 0.5) * 24 + (r() - 0.5) * 8;
+      P.set(x, y, 92 + g, 96 + g, 106 + g);
+      if (n(x + 11, y + 5) > 0.68) P.tint(x, y, 128, 66, 36, 0.55); // rust patches
+    }
+    for (let y = 2; y < 32; y += 6) { P.set(4, y, 160, 164, 174); P.set(27, y, 160, 164, 174); }
   });
   return T;
 }

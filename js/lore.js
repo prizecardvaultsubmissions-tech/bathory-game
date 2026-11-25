@@ -98,3 +98,63 @@ export const TOWER_SEALS = [
     body: "The last seal is hers: a dragon's tooth curled about a crown. Inside, only one line, in a beautiful hand: \u201cWhoever climbs this far has earned the view.\u201d Above, something heavy shifts on the battlements."
   }
 ];
+
+// Stage I — The Woods. Five boundary talismans hung by Thurzó's scouts along the timber road.
+export const WOODS_TALISMANS = [
+  {
+    num: "TRAIL TALISMAN I",
+    title: "The Milestone at Birch Ford",
+    body: "Iron stamped with a pine-bough and tied to a boundary post with hemp. Scratched on the back in fresh charcoal: “Posthorses refuse the ford after sunset. The fog smells of copper tonight.”"
+  },
+  {
+    num: "TRAIL TALISMAN II",
+    title: "The Woodcutter's Warning",
+    body: "Found nailed beside an empty axe-block: “Four loads of birch delivered to the castle kitchen. The steward paid in silver and told us not to look back at the carts.” The iron tag still swings in a wind you cannot feel."
+  },
+  {
+    num: "TRAIL TALISMAN III",
+    title: "Scouts' Tally",
+    body: "Three notches cut into the rim for scouts who did not come back down the ridge. Beneath them, in steady clerk's ink: “Wolves follow the road, yet something taller walks between the pines.”"
+  },
+  {
+    num: "TRAIL TALISMAN IV",
+    title: "The Bog Lantern",
+    body: "Bound around a charred wick-tin from the marsh boardwalk. Those who wandered off the timber track swore the pale lights led them in circles until dawn — or until the hounds came down from the gate."
+  },
+  {
+    num: "TRAIL TALISMAN V",
+    title: "The Hillfoot Mark",
+    body: "The last talisman hangs within sight of the castle's outer curtain wall. Written across the iron plate: “Beyond this cairn lies the bailey. Only the beast that guards the postern still obeys the horn.”",
+    witchingPostscript: "WITCHING HOUR NOTE: The pine fog deepens after midnight. Even the wolves keep close to the fire."
+  }
+];
+
+// Stage II — The Courtyard. Five garrison orders dropped during the night watch in the outer bailey.
+export const COURTYARD_ORDERS = [
+  {
+    num: "GARRISON ORDER I",
+    title: "Watch of the South Postern",
+    body: "Sealed with black wax by the captain of the outer yard: “Bar the postern at dusk. No townsman enters, no servant leaves, and keep the stable lanterns trimmed till morning.”"
+  },
+  {
+    num: "GARRISON ORDER II",
+    title: "The Groom's Ledger",
+    body: "A rain-spotted sheet from the stables: “Coach oiled, four chestnuts shod for a midnight journey that never left the gate. The coachman asked no questions and took double coin.”"
+  },
+  {
+    num: "GARRISON ORDER III",
+    title: "Kennel Ration Roll",
+    body: "Scrawled beside a bent iron chain: “Mastiffs kept hungry three days before the Palatine's arrival. Do not unlatch the east run without a lantern and a halberd.”"
+  },
+  {
+    num: "GARRISON ORDER IV",
+    title: "The Bell-Rope Notice",
+    body: "Posted inside the watchtower barracks: “The bailey bell is silenced by order of the Lady. Should anyone ring it after curfew, the Gate Warden is to answer alone.”"
+  },
+  {
+    num: "GARRISON ORDER V",
+    title: "Keys of the Great Door",
+    body: "The fifth parchment bears the iron seal of the keep itself: “Five orders bind the inner castle doors. Whoever holds them all still has to answer the Warden before the oak threshold.”",
+    witchingPostscript: "WITCHING HOUR NOTE: The courtyard flagstones remember every watchman who fell asleep on post."
+  }
+];

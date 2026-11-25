@@ -1,4 +1,6 @@
 import { LEDGER_PAGES } from "./lore.js";
+import { STAGE_WOODS } from "./stage_woods.js";
+import { STAGE_COURTYARD } from "./stage_courtyard.js";
 import { STAGE2 } from "./stage2.js";
 import { STAGE3, floorAt } from "./stage3.js";
 
@@ -105,7 +107,11 @@ export const PUZZLE_GLYPHS = {
   sun: "SUN", bell: "BELL", rose: "ROSE", key: "KEY", moon: "MOON", skull: "SKULL",
   air: "AIR", fire: "FIRE", water: "WATER", earth: "EARTH",
   MDLXXV: "MDLXXV (1575)", MDXC: "MDXC (1590)", MDCIV: "MDCIV (1604)", MDCX: "MDCX (1610)", MDCXIV: "MDCXIV (1614)",
-  silver: "SILVER", bronze: "BRONZE", iron: "IRON", bone: "BONE"
+  silver: "SILVER", bronze: "BRONZE", iron: "IRON", bone: "BONE",
+  owl: "OWL", crow: "CROW", stag: "STAG", wolf: "WOLF",
+  north: "NORTH", east: "EAST", south: "SOUTH", west: "WEST",
+  sword: "SWORD", key: "KEY", rose: "ROSE", crown: "CROWN",
+  brass: "BRASS", gold: "GOLD"
 };
 
 const FEATURES = {
@@ -185,16 +191,16 @@ function rawGrid(def) {
 }
 
 const STAGE1 = {
-  stage: 1, title: "Csejte Castle", collect: "Ledger Pages", collectShort: "LEDGER",
+  stage: 3, kind: "castle", title: "Csejte Castle", collect: "Ledger Pages", collectShort: "LEDGER",
   rooms: ROOMS, corridors: CORRIDORS, pillars: PILLARS, partitions: PARTITIONS,
   props: PROP_DEFS, features: FEATURES, breakables: BREAKABLE_DEFS,
   locked: LOCKED_ROOMS, secrets: SECRET_DOORS, lore: LEDGER_PAGES,
   merchant: [54, 39]
 };
-export const STAGES = { 1: STAGE1, 2: STAGE2, 3: STAGE3 };
+export const STAGES = { 1: STAGE_WOODS, 2: STAGE_COURTYARD, 3: STAGE1, 4: STAGE2, 5: STAGE3 };
 
 export function createLevel(stageNo = 1) {
-  const def = STAGES[stageNo] || STAGE1;
+  const def = STAGES[stageNo] || STAGE_WOODS;
   const ROOMS = def.rooms, PROP_DEFS = def.props, FEATURES = def.features;
   const BREAKABLE_DEFS = def.breakables, LOCKED_ROOMS = def.locked, SECRET_DOORS = def.secrets;
   const grid = rawGrid(def);
@@ -243,7 +249,7 @@ export function createLevel(stageNo = 1) {
   const bolts = FEATURES.bolts.map(([tx, ty], i) => ({ id: i, tx, ty, ...center(tx, ty), collected: false }));
   const spawns = FEATURES.spawns.map(([tx, ty]) => ({ tx, ty, ...center(tx, ty) }));
   const wellTile = (PROP_DEFS.well || PROP_DEFS.fountain)[0];
-  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile), fountain: !PROP_DEFS.well, cistern: def.stage === 3 };
+  const well = { tx: wellTile[0], ty: wellTile[1], ...center(...wellTile), fountain: !PROP_DEFS.well, cistern: def.kind === "climb" };
   const merchant = def.merchant ? { tx: def.merchant[0], ty: def.merchant[1], ...center(...def.merchant) } : null;
   if (merchant) grid[merchant.ty][merchant.tx] = 3;
   const graves = (PROP_DEFS.grave || []).map(([tx, ty], i) => ({ i, tx, ty, ...center(tx, ty), grab: 0, cd: 1 + i * 0.37 }));
@@ -257,6 +263,7 @@ export function createLevel(stageNo = 1) {
 
   return {
     stage: def.stage,
+    kind: def.kind,
     title: def.title,
     collect: def.collect,
     collectShort: def.collectShort,
@@ -289,6 +296,7 @@ export function createLevel(stageNo = 1) {
     floors: def.floors || null,
     stairs: (def.stairs || []).map((s, i) => ({ ...s, id: i, ...center(s.tx, s.ty), ax: center(...s.arrive).x, ay: center(...s.arrive).y })),
     bossSpawn: def.boss ? center(...def.boss) : null,
+    bossKind: def.bossKind || null,
     floorAt: def.floors ? floorAt : () => 0
   };
 }

@@ -135,7 +135,7 @@ const SECRETS = [
 ];
 
 export const STAGE2 = {
-  stage: 2, title: "The Graveyards", collect: "Grave Rubbings", collectShort: "RUBBINGS",
+  stage: 4, kind: "graveyards", title: "The Graveyards", collect: "Grave Rubbings", collectShort: "RUBBINGS",
   rooms: ROOMS, corridors: CORRIDORS, pillars: PILLARS, partitions: PARTITIONS,
   props: PROP_DEFS, features: FEATURES, breakables: STAGE2_BREAKABLES,
   locked: LOCKED, secrets: SECRETS, lore: GRAVE_RUBBINGS,

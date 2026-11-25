@@ -165,11 +165,11 @@ const LOCKED = [
 ];
 
 export const STAGE3 = {
-  stage: 3, title: "The Climb", collect: "Tower Seals", collectShort: "SEALS",
+  stage: 5, kind: "climb", title: "The Climb", collect: "Tower Seals", collectShort: "SEALS",
   rooms: ROOMS, corridors: CORRIDORS, pillars: PILLARS, partitions: PARTITIONS,
   props: PROP_DEFS, features: FEATURES, breakables: STAGE3_BREAKABLES,
   locked: LOCKED, secrets: [], lore: TOWER_SEALS,
-  merchant: [54, 43], floors: FLOORS, stairs: STAIRS, boss: [9, 10]
+  merchant: [54, 43], floors: FLOORS, stairs: STAIRS, boss: [9, 10], bossKind: "gargoyle"
 };
 
 export function floorAt(tx, ty) {
