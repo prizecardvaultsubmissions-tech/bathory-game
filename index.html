@@ -78,7 +78,7 @@
       <div class="freeze-track"><div id="freeze-fill"></div></div>
     </div>
     <div id="boss-bar" class="boss-bar hidden" aria-label="Boss health">
-      <div class="boss-name">THE TOWER GARGOYLE</div>
+      <div id="boss-name" class="boss-name">THE TOWER GARGOYLE</div>
       <div class="boss-track"><div id="boss-fill"></div></div>
     </div>
     <div id="puzzle-hud" class="puzzle-hud hidden">
@@ -132,7 +132,7 @@
     <!-- STAGE TITLE CARD (fades over gameplay) -->
     <div id="stage-card" class="stage-card hidden" aria-live="polite">
       <div id="stage-card-num" class="stage-card-num">STAGE I</div>
-      <div id="stage-card-title" class="stage-card-title">CSEJTE CASTLE</div>
+      <div id="stage-card-title" class="stage-card-title">THE WOODS</div>
       <div id="stage-card-sub" class="stage-card-sub"></div>
     </div>
 
@@ -140,10 +140,10 @@
     <section id="screen-title" class="overlay-screen">
       <div class="card-frame title-card">
         <div class="wax-crest" aria-hidden="true">❖</div>
-        <div class="build-tag">CSEJTE_DEV_09 // HOUSE OF HORRORS</div>
+        <div class="build-tag">CSEJTE_DEV_10 // CARPATHIAN NIGHT</div>
         <h1>CSEJTE:<br/><span>BLOOD LEDGER</span></h1>
         <p class="subtitle">
-          Six wings of a cursed castle. Arm yourself, cut down her risen servants, gather mirrors, and find five ledger pages before the Blood Countess finds you.
+          Five stages from the Carpathian woods to the top of Csejte Tower. Arm yourself, survive her beasts and courtyards, gather mirrors, and climb before the Blood Countess finds you.
         </p>
 
         <div id="witching-badge" class="witching-badge hidden">
@@ -153,16 +153,18 @@
         <div id="title-whisper" class="whisper-line"></div>
 
         <div class="title-buttons">
-          <button id="btn-start" class="gothic-btn primary-cta" type="button">ENTER THE CASTLE</button>
+          <button id="btn-start" class="gothic-btn primary-cta" type="button">ENTER THE WOODS</button>
           <button id="btn-how" class="gothic-btn secondary-cta" type="button">CONTROLS &amp; SURVIVAL</button>
         </div>
         <div id="title-stages" class="title-stages hidden">
-          <button id="btn-continue" class="gothic-btn primary-cta moon-cta" type="button">☾ CONTINUE · STAGE II: THE GRAVEYARDS</button>
+          <button id="btn-continue" class="gothic-btn primary-cta moon-cta" type="button">☾ CONTINUE · STAGE II: THE COURTYARD</button>
           <div class="stage-select">
             <span class="stage-select-label">STAGE SELECT</span>
-            <button id="btn-stage-1" class="stage-chip" type="button">I · CASTLE</button>
-            <button id="btn-stage-2" class="stage-chip moon" type="button">II · GRAVEYARDS</button>
-            <button id="btn-stage-3" class="stage-chip tower hidden" type="button">III · THE CLIMB</button>
+            <button id="btn-stage-1" class="stage-chip woods" type="button">I · WOODS</button>
+            <button id="btn-stage-2" class="stage-chip courtyard hidden" type="button">II · COURTYARD</button>
+            <button id="btn-stage-3" class="stage-chip hidden" type="button">III · CASTLE</button>
+            <button id="btn-stage-4" class="stage-chip moon hidden" type="button">IV · GRAVEYARDS</button>
+            <button id="btn-stage-5" class="stage-chip tower hidden" type="button">V · THE CLIMB</button>
           </div>
         </div>
         <div id="title-purse" class="title-purse"></div>
@@ -273,8 +275,8 @@
           <li><strong>Crates &amp; barrels:</strong> Smash them (a few hits; the mace splits them in one or two). Inside: a <em>weapon change token</em> (pick a new weapon), an <em>armor plate</em> (the ARMOR bar soaks monster hits), a 15s <em>speed tonic</em>, or a <em>crate slime</em> that splits into two minis when it dies.</li>
           <li><strong>Kills &amp; keys:</strong> The ☠ counter tracks kills. At <em>15</em> kills <em>Key I</em> falls; at <em>30</em>, <em>Key II</em>. Keys glow in the HUD.</li>
           <li><strong>Locked chambers:</strong> Two sealed doors off the south of the Outer Ward. Key I opens the <em>Chamber of Candles</em>; Key II opens the <em>Crushing Hall</em>. The door locks behind you and a riddle appears (tap <em>RIDDLE</em> to read it again). Candles: light all six in the riddle's order; a wrong flame snuffs them all. Crushing Hall: press four glyph plates in order before the walls meet; a wrong plate makes them lurch closer. Neither the Countess nor new servants can reach you inside. Solve it for a rich reward.</li>
-          <li><strong>The Hooded Pedlar:</strong> A hooded merchant keeps a stall in a quiet corner of each stage (the east end of the Outer Ward; the south-east corner of the Chapel Graveyard) and also meets you between stages. Tap <em>SHOP</em>. Supplies: health draught, sanity salts, lamp oil, armor, mirrors, bolts, speed tonic, weapon swap. <em>Permanent blessings</em> (Iron Heart, Whetstone, Wider Wick, Silvered Glass) are kept forever. The game pauses while you trade.</li>
-          <li><strong>Coins &amp; your purse:</strong> Coins carry from Stage I into Stage II and are saved in your purse. If you die you keep the coins you carried in (minus anything you spent) plus <em>half</em> of what you picked up that run.</li>
+          <li><strong>The Hooded Pedlar:</strong> A hooded merchant keeps a stall in a quiet corner of every stage and also meets you between stages. Tap <em>SHOP</em>. Supplies: health draught, sanity salts, lamp oil, armor, mirrors, bolts, speed tonic, weapon swap. <em>Permanent blessings</em> (Iron Heart, Whetstone, Wider Wick, Silvered Glass) are kept forever. The game pauses while you trade.</li>
+          <li><strong>Coins &amp; your purse:</strong> Coins carry forward from stage to stage and are saved in your purse. If you die you keep the coins you carried in (minus anything you spent) plus <em>half</em> of what you picked up that run.</li>
           <li><strong>Stage II · The Graveyards:</strong> Escape the castle with all five pages to unlock it (then use <em>CONTINUE</em> on the title screen). Take five <em>grave rubbings</em> across six yards and leave by the Gatehouse road. <em>Grave-risen</em> skeletons claw out of the earth, <em>Gravedigger Brutes</em> hit hard, and <em>Banshees</em> wail to drain sanity and slow you. <em>Open graves</em> have hands — keep your distance. Coffins and urns break like crates. The <em>black fountain</em> takes offerings like the well. Keys fall at 15 and 30 kills again for the <em>Crypt of Names</em> and the <em>Drowned Mausoleum</em>.</li>
           <li><strong>Stage III · The Climb:</strong> Escape the Graveyards to unlock it. Six floors of the tower, one above the other: the <em>Cellar &amp; Wine Vaults</em>, the <em>Torture Chambers</em>, the <em>Servants' Floor</em>, the <em>Library &amp; Study</em>, the <em>Countess's Bedchamber</em> and the <em>Tower Top</em>. Every floor's stair up is barred until you break that floor's <em>Tower Seal</em>; tap <em>CLIMB</em> / <em>DESCEND</em> at a stair. She follows you a few seconds later, and she grows faster and sharper-eyed the higher you go. New foes: <em>Chained Prisoners</em>, armored <em>Iron Maiden Walkers</em> (strike while their doors are open), <em>Portrait Wraiths</em> that blink toward you, and bat swarms. Casks, crates and bookshelves break. The Pedlar keeps a stall on the Servants' Floor. On the roof, kill the <em>Tower Gargoyle</em> (it swoops — sidestep) to open the dawn stair. Keys at 15 and 30 kills open the <em>Hall of Mirrors</em> (turn four glasses, then open the lamp) and the timed <em>Clock Library</em> (pull the hour-books in order).</li>
           <li><strong>Graphics:</strong> Tap <em>GRAPHICS</em> on the title or pause screen to cycle AUTO / LOW / MEDIUM / HIGH. AUTO drops quality if your frame rate falls.</li>
@@ -284,7 +286,7 @@
           <li><strong>Iron Alcoves:</strong> Tap <em>HIDE</em> to vanish from her and the monsters alike.</li>
           <li><strong>Braziers:</strong> Refill <strong>Lamp Oil</strong>, <strong>Sanity</strong> and slowly mend <strong>Health</strong>.</li>
           <li><strong>Flare:</strong> 360° burst (20% oil) that stuns her if close. <strong>Cracked glass</strong> rings out and draws her near.</li>
-          <li><strong>Goal:</strong> Five ledger pages lie across six wings. Find them all, then escape through the North Gate. The map (top right) marks pages in gold.</li>
+          <li><strong>Goal:</strong> Five collectibles lie across each stage (plus a gate guardian in the Woods, Courtyard, and Tower Roof). Gather all five, defeat any guardian, and escape north!</li>
         </ul>
         <div class="title-buttons">
           <button id="btn-help-close" class="gothic-btn primary-cta" type="button">RESUME</button>

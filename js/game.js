@@ -149,20 +149,36 @@ let boss = null;          // the Tower Gargoyle
 let shutterCd = 0;
 let tickTimer = 0;
 
-// ---------------------------------------------------------------- persistence (v0.6)
-// Coins live in a purse saved between runs; upgrades and the Stage II unlock are permanent.
+// ---------------------------------------------------------------- persistence (v0.6 -> v0.8)
+// Coins live in a purse saved between runs; upgrades and stage unlocks persist across versions.
 const LS_PURSE = "csejte_purse", LS_UP = "csejte_upgrades", LS_S2 = "csejte_stage2";
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 let upgrades = Object.assign({ heart: 0, edge: 0, wick: 0, glass: 0 }, lsGet(LS_UP, {}));
-let stage2Unlocked = !!lsGet(LS_S2, false);
-const LS_S3 = "csejte_stage3";
-let stage3Unlocked = !!lsGet(LS_S3, false);
-const STAGE_NAMES = { 1: "CSEJTE CASTLE", 2: "THE GRAVEYARDS", 3: "THE CLIMB" };
+const LS_S3 = "csejte_stage3", LS_UNLOCKED = "csejte_unlocked", LS_VER = "csejte_ver";
+// Clean migration from v0.6/v0.7 (3-stage) saves: old Stage II -> new Stage IV, old Stage III -> new Stage V.
+const _legacyUnlock = lsGet(LS_S3, false) ? 5 : lsGet(LS_S2, false) ? 4 : 1;
+let maxUnlocked = Math.max(1, Math.min(5, Number(lsGet(LS_UNLOCKED, 0)) || _legacyUnlock));
+if ((lsGet(LS_VER, 0) | 0) < 8) {
+  lsSet(LS_UNLOCKED, maxUnlocked);
+  lsSet(LS_VER, 8);
+}
+function unlockUpTo(n) {
+  maxUnlocked = Math.max(maxUnlocked, Math.min(5, n | 0));
+  lsSet(LS_UNLOCKED, maxUnlocked);
+  if (maxUnlocked >= 4) lsSet(LS_S2, true);
+  if (maxUnlocked >= 5) lsSet(LS_S3, true);
+}
+const STAGE_NAMES = { 1: "THE WOODS", 2: "THE COURTYARD", 3: "CSEJTE CASTLE", 4: "THE GRAVEYARDS", 5: "THE CLIMB" };
 const ROMAN = ["", "I", "II", "III", "IV", "V", "VI"];
-function isS3() { return !!(level && level.stage === 3); }
-// The exit opens on five collectibles — and in the tower, only once the roof's guardian is dead.
-function gateOpen() { return !!player && player.pagesFound >= 5 && (!isS3() || !!level.bossDead); }
+const stageKind = () => (level && level.kind) || "woods";
+const isWoods = () => stageKind() === "woods";
+const isCourtyard = () => stageKind() === "courtyard";
+const isCastle = () => stageKind() === "castle";
+const isS2 = () => stageKind() === "graveyards";
+const isS3 = () => stageKind() === "climb";
+// The exit opens on five collectibles — and when a guardian exists (Woods, Courtyard, Tower Roof), once defeated.
+function gateOpen() { return !!player && player.pagesFound >= 5 && (!level || !level.bossSpawn || !!level.bossDead); }
 function floorOfXY(x, y) { return level.floorAt(Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)); }
 let currentStage = 1;     // stage of the run in progress
 let pendingStage = 1;     // stage the armory's BEGIN button will start
@@ -339,7 +355,11 @@ function startNewRun(stage = pendingStage, carry = null) {
   inPuzzle = null; keysAwarded = 0; grindTimer = 0; warnedWail = false; warnedHands = false;
   if (puzzleHud) puzzleHud.classList.add("hidden");
   const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
-  if (stage === 3) enterFloor(1, { initial: true });
+  if (isS3()) enterFloor(1, { initial: true });
+  else if (level.bossSpawn) {
+    level.bossDead = false;
+    spawnBoss();
+  }
   buildMinimapBase();
 
   hideAllScreens();
@@ -357,11 +377,13 @@ function showStageCard(stage) {
   if (!el) return;
   $("stage-card-num").textContent = `STAGE ${ROMAN[stage]}`;
   $("stage-card-title").textContent = STAGE_NAMES[stage];
-  $("stage-card-sub").textContent = stage === 3
-    ? "Floor I · The Cellar — break a Tower Seal on every floor and climb"
-    : stage === 2
-    ? "Take five grave rubbings · escape by the Gatehouse road"
-    : "Recover five ledger pages · escape by the North Gate";
+  $("stage-card-sub").textContent = {
+    1: "Gather five Trail Talismans · slay the Packmaster at the Hillfoot Postern",
+    2: "Seize five Garrison Orders · defeat the Gate Warden before the Castle Doors",
+    3: "Recover five Ledger Pages · escape through the North Gate",
+    4: "Take five Grave Rubbings · escape by the Gatehouse road",
+    5: "Floor I · The Cellar — break a Tower Seal on every floor and climb"
+  }[stage] || "";
   el.classList.remove("floor");
   el.classList.remove("hidden");
   el.style.animation = "none";
@@ -393,23 +415,27 @@ function showTitle() {
   screenTitle.classList.remove("hidden");
 }
 
-function highestStage() { return stage3Unlocked ? 3 : stage2Unlocked ? 2 : 1; }
+function highestStage() { return maxUnlocked; }
 function refreshTitleStages() {
   const row = $("title-stages");
   if (!row) return;
-  row.classList.toggle("hidden", !stage2Unlocked);
-  const c3 = $("btn-stage-3");
-  if (c3) c3.classList.toggle("hidden", !stage3Unlocked);
+  row.classList.toggle("hidden", maxUnlocked <= 1);
+  for (let n = 1; n <= 5; n++) {
+    const ch = $(`btn-stage-${n}`);
+    if (ch) ch.classList.toggle("hidden", n > maxUnlocked);
+  }
   const cont = $("btn-continue");
-  if (cont) cont.textContent = highestStage() === 3 ? "☾ CONTINUE · STAGE III: THE CLIMB" : "☾ CONTINUE · STAGE II: THE GRAVEYARDS";
+  const hi = highestStage();
+  if (cont) cont.textContent = `☾ CONTINUE · STAGE ${ROMAN[hi]}: ${STAGE_NAMES[hi]}`;
   const purse = $("title-purse");
   if (purse) purse.textContent = `◉ ${loadPurse()} coins in your purse`;
 }
 $("btn-start").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
-if ($("btn-stage-1")) $("btn-stage-1").addEventListener("click", () => { pendingStage = 1; showWeaponSelect(); });
-if ($("btn-stage-2")) $("btn-stage-2").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = 2; showWeaponSelect(); });
-if ($("btn-stage-3")) $("btn-stage-3").addEventListener("click", () => { if (!stage3Unlocked) return; pendingStage = 3; showWeaponSelect(); });
-if ($("btn-continue")) $("btn-continue").addEventListener("click", () => { if (!stage2Unlocked) return; pendingStage = highestStage(); showWeaponSelect(); });
+for (let n = 1; n <= 5; n++) {
+  const el = $(`btn-stage-${n}`);
+  if (el) el.addEventListener("click", () => { if (n > maxUnlocked) return; pendingStage = n; showWeaponSelect(); });
+}
+if ($("btn-continue")) $("btn-continue").addEventListener("click", () => { if (maxUnlocked <= 1) return; pendingStage = highestStage(); showWeaponSelect(); });
 btnBegin.addEventListener("click", () => startNewRun(pendingStage));
 $("btn-weapon-back").addEventListener("click", showTitle);
 $("btn-how").addEventListener("click", () => {
@@ -500,9 +526,21 @@ function triggerInteract() {
     fx.push({ type: "pickup", x: p.x, y: p.y, color: 0xe7c873 });
     loreNum.textContent = p.lore.num;
     loreBody.classList.remove("riddle");
-    const S2 = level.stage === 2;
-    if (loreSeal) loreSeal.textContent = isS3() ? "TOWER SEAL BROKEN" : S2 ? "CHARCOAL RUBBING TAKEN" : "WAX SEAL BROKEN";
-    loreCloseBtn.textContent = isS3() ? "POCKET THE SEAL (+12% SANITY)" : S2 ? "POCKET RUBBING (+12% SANITY)" : "POCKET PAGE (+12% SANITY)";
+    const knd = stageKind();
+    if (loreSeal) loreSeal.textContent = {
+      woods: "TRAIL TALISMAN TAKEN",
+      courtyard: "GARRISON ORDER SEIZED",
+      castle: "WAX SEAL BROKEN",
+      graveyards: "CHARCOAL RUBBING TAKEN",
+      climb: "TOWER SEAL BROKEN"
+    }[knd] || "WAX SEAL BROKEN";
+    loreCloseBtn.textContent = {
+      woods: "POCKET TALISMAN (+12% SANITY)",
+      courtyard: "POCKET ORDER (+12% SANITY)",
+      castle: "POCKET PAGE (+12% SANITY)",
+      graveyards: "POCKET RUBBING (+12% SANITY)",
+      climb: "POCKET THE SEAL (+12% SANITY)"
+    }[knd] || "POCKET PAGE (+12% SANITY)";
     if (isS3()) openStairsUp(floorOfXY(p.x, p.y));
     loreTitle.textContent = p.lore.title;
     loreBody.textContent = p.lore.body;
@@ -512,8 +550,11 @@ function triggerInteract() {
     } else lorePostscript.classList.add("hidden");
     mode = "LORE";
     screenLore.classList.remove("hidden");
-    if (player.pagesFound >= 5 && isS3()) toast(level.bossDead ? "All five seals broken — the dawn stair is open!" : "All five seals broken. Only the roof remains — and what guards it.", 4);
-    else if (player.pagesFound >= 5) toast(S2 ? "All five rubbings taken — the Gatehouse road is open!" : "All five seals broken — the North Gate is open!", 4);
+    if (player.pagesFound >= 5) {
+      if (isS3()) toast(level.bossDead ? "All five seals broken — the dawn stair is open!" : "All five seals broken. Only the roof remains — and what guards it.", 4);
+      else if (level.bossSpawn && !level.bossDead) toast("All five gathered! Defeat the guardian at the northern gate to escape.", 4);
+      else toast(isS2() ? "All five rubbings taken — the Gatehouse road is open!" : "All five found — the way north is open!", 4);
+    }
     updateHud();
   } else if (nearbyContext.type === "alcove") {
     player.hidden = true;
@@ -549,6 +590,12 @@ function triggerInteract() {
     openShutter();
   } else if (nearbyContext.type === "book") {
     pullBook(nearbyContext.obj);
+  } else if (nearbyContext.type === "stone") {
+    touchStone(nearbyContext.obj);
+  } else if (nearbyContext.type === "winch") {
+    turnWinch(nearbyContext.obj);
+  } else if (nearbyContext.type === "shield") {
+    touchShield(nearbyContext.obj);
   }
 }
 
@@ -647,13 +694,19 @@ function tryAttack() {
 
 function onMonsterKilled(m, forcedKind = null, opts = {}) {
   kills += 1;
-  if (m.kind === "gargoyle") {
+  if (m.kind === "gargoyle" || m.kind === "packmaster" || m.kind === "warden") {
     level.bossDead = true;
     boss = null;
     shake = Math.max(shake, 1.0);
     sound.playSolve();
-    spawnDrop("coins", m.x, m.y, { amount: 60 });
-    showBoon("key", "THE GARGOYLE SHATTERS", gateOpen() ? "Stone rains over the parapet. The dawn stair is open — run north!" : "The roof is clear. Break every Tower Seal to open the dawn stair.", 4.5);
+    const reward = m.kind === "gargoyle" ? 60 : m.kind === "warden" ? 45 : 35;
+    spawnDrop("coins", m.x, m.y, { amount: reward });
+    const msg = m.kind === "packmaster"
+      ? { t: "THE PACKMASTER FALLS", b: gateOpen() ? "The Hillfoot Postern is unbarred — follow the climb north!" : "The great hound lies still. Gather all five Trail Talismans to open the gate." }
+      : m.kind === "warden"
+      ? { t: "THE GATE WARDEN SHATTERS", b: gateOpen() ? "The oak Castle Doors swing wide — enter Csejte Castle!" : "The Warden falls. Seize all five Garrison Orders to unbar the doors." }
+      : { t: "THE GARGOYLE SHATTERS", b: gateOpen() ? "Stone rains over the parapet. The dawn stair is open — run north!" : "The roof is clear. Break every Tower Seal to open the dawn stair." };
+    showBoon("key", msg.t, msg.b, 4.5);
   }
   checkKeyDrops(m);
   if (m.kind === "slime") {
@@ -669,12 +722,12 @@ function onMonsterKilled(m, forcedKind = null, opts = {}) {
     sound.playSlime();
   }
   sound.playMonsterDie();
-  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : m.kind === "bats" ? 0x5a3a5a : (m.kind === "slime" || m.kind === "slimelet") ? 0xb0101e : m.kind === "skeleton" ? 0xe0d4b0 : m.kind === "banshee" ? 0xa8c8f0 : 0x9fb28a });
+  fx.push({ type: "dissolve", x: m.x, y: m.y, color: m.kind === "maiden" ? 0xd8b0c0 : (m.kind === "bats" || m.kind === "crows") ? 0x5a3a5a : (m.kind === "slime" || m.kind === "slimelet") ? 0xb0101e : m.kind === "skeleton" ? 0xe0d4b0 : m.kind === "banshee" ? 0xa8c8f0 : m.kind === "wisp" ? 0x76ffa0 : (m.kind === "wolf" || m.kind === "hound") ? 0x8a786e : 0x9fb28a });
   const kind = forcedKind || rollDropKind(m);
   if (kind && kind !== "nothing") {
     const extra = { ...opts };
-    if (kind === "mirror" && !extra.tier) extra.tier = rollMirrorTier(m.kind === "ghoul" || m.kind === "dweller" || m.kind === "brute");
-    if (kind === "coins" && !extra.amount) extra.amount = (m.kind === "dweller" || m.kind === "brute") ? 16 + Math.floor(Math.random() * 10) : (m.kind === "ghoul" || m.kind === "skeleton") ? 12 + Math.floor(Math.random() * 9) : 6 + Math.floor(Math.random() * 8);
+    if (kind === "mirror" && !extra.tier) extra.tier = rollMirrorTier(m.kind === "ghoul" || m.kind === "dweller" || m.kind === "brute" || m.kind === "stalker" || m.kind === "sentry");
+    if (kind === "coins" && !extra.amount) extra.amount = (m.kind === "dweller" || m.kind === "brute" || m.kind === "sentry" || m.kind === "stalker") ? 16 + Math.floor(Math.random() * 10) : (m.kind === "ghoul" || m.kind === "skeleton" || m.kind === "hound" || m.kind === "wolf") ? 12 + Math.floor(Math.random() * 9) : 6 + Math.floor(Math.random() * 8);
     if (kind === "sanity" && !extra.amount) extra.amount = 24;
     spawnDrop(kind, m.x, m.y, extra);
   }
@@ -1067,15 +1120,15 @@ function handleDeath(reason) {
   const kept = purseAfterDeath();
   savePurse(kept);
   const deathCoins = $("death-coins"); if (deathCoins) deathCoins.textContent = `${kept}`;
-  const dp = $("death-pages-label"); if (dp) dp.textContent = isS3() ? "SEALS" : level.stage === 2 ? "RUBBINGS" : "PAGES";
-  const dst = $("death-stage"); if (dst) dst.textContent = isS3() && curFloor ? `STAGE III · FLOOR ${ROMAN[curFloor]} — ${level.floors[curFloor - 1].name.toUpperCase()}` : `STAGE ${ROMAN[level.stage]} — ${STAGE_NAMES[level.stage]}`;
+  const dp = $("death-pages-label"); if (dp) dp.textContent = level.collectShort || "PAGES";
+  const dst = $("death-stage"); if (dst) dst.textContent = isS3() && curFloor ? `STAGE V · FLOOR ${ROMAN[curFloor]} — ${level.floors[curFloor - 1].name.toUpperCase()}` : `STAGE ${ROMAN[level.stage]} — ${STAGE_NAMES[level.stage]}`;
   const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
   screenDeath.classList.remove("hidden");
 }
 
 function handleWin() {
   if (mode !== "PLAYING") return;
-  if (currentStage < 3) { handleStageClear(); return; }
+  if (currentStage < 5) { handleStageClear(); return; }
   mode = "WIN";
   const bb = $("boss-bar"); if (bb) bb.classList.add("hidden");
   savePurse(player.coins);
@@ -1097,9 +1150,7 @@ function handleStageClear() {
   clearDeathEcho();
   endRunUi();
   const cleared = currentStage;
-  stage2Unlocked = true;
-  lsSet(LS_S2, true);
-  if (cleared >= 2) { stage3Unlocked = true; lsSet(LS_S3, true); }
+  unlockUpTo(cleared + 1);
   savePurse(player.coins);
   setStageScreen(cleared + 1);
   carryOver = {
@@ -1113,17 +1164,21 @@ function handleStageClear() {
   screenStageShow();
 }
 const STAGE_SCREENS = {
-  2: { tag: "STAGE I CLEARED", next: "STAGE II", title: "THE GRAVEYARDS", timeLabel: "STAGE I TIME", enter: "ENTER THE GRAVEYARDS",
-    blurb: "Beyond the gate the road drops into the old burial yards of Csejte — fog, crows and five hundred crooked stones. Take five grave rubbings and reach the Gatehouse road. She is already walking among the graves." },
-  3: { tag: "STAGE II CLEARED", next: "STAGE III", title: "THE CLIMB", timeLabel: "STAGE II TIME", enter: "DESCEND INTO THE CELLAR",
-    blurb: "The Gatehouse road loops back to the castle's oldest door: the tower cellar. Six floors stand between you and the dawn — wine vaults, the torture chambers, the servants' floor, the library, her bedchamber, and the roof. Break a Tower Seal on every floor. She will follow you up every stair." }
+  2: { tag: "STAGE I CLEARED", next: "STAGE II", title: "THE COURTYARD", timeLabel: "STAGE I TIME", enter: "ENTER THE COURTYARD",
+    blurb: "You break out of the pine mist onto the cobbled bailey below Csejte Castle. Stables, kennels, and watchtowers hem the yard — and the Gate Warden bars the oak Castle Doors. Seize five Garrison Orders and cut him down." },
+  3: { tag: "STAGE II CLEARED", next: "STAGE III", title: "CSEJTE CASTLE", timeLabel: "STAGE II TIME", enter: "ENTER THE CASTLE",
+    blurb: "The great oak doors groan open into the Outer Ward of Csejte Keep. Six wings of stone, chapel glass, kitchens, and torture chambers await. Gather five Ledger Pages before the Countess corners you in the dark." },
+  4: { tag: "STAGE III CLEARED", next: "STAGE IV", title: "THE GRAVEYARDS", timeLabel: "STAGE III TIME", enter: "ENTER THE GRAVEYARDS",
+    blurb: "Beyond the North Gate the road drops into the old burial yards of Csejte — fog, crows and five hundred crooked stones. Take five grave rubbings and reach the Gatehouse road. She is already walking among the graves." },
+  5: { tag: "STAGE IV CLEARED", next: "STAGE V", title: "THE CLIMB", timeLabel: "STAGE IV TIME", enter: "DESCEND INTO THE CELLAR",
+    blurb: "The Gatehouse road loops back to the castle's oldest door: the tower cellar. Six floors stand between you and the dawn — wine vaults, torture chambers, servants' quarters, the library, her bedchamber, and the roof. Break a Tower Seal on every floor." }
 };
 function setStageScreen(n) {
   const d = STAGE_SCREENS[n] || STAGE_SCREENS[2];
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set("stage-tag", d.tag); set("stage-next", d.next); set("stage-title", d.title);
   set("stage-blurb", d.blurb); set("stage-time-label", d.timeLabel); set("btn-stage-enter", d.enter);
-  const el = $("screen-stage"); if (el) el.classList.toggle("climb", n === 3);
+  const el = $("screen-stage"); if (el) el.classList.toggle("climb", n === 5);
 }
 function screenStageShow() {
   const el = $("screen-stage");
@@ -1185,7 +1240,7 @@ function openShop(ctx) {
   attackHeld = false;
   shopSel = null;
   $("shop-sub").textContent = ctx === "between"
-    ? "“The road to the graveyards is long. Spend wisely, little lamb.”"
+    ? "“The road ahead grows colder. Spend wisely, little lamb.”"
     : "“Coins for comfort. She cannot see you while we trade.”";
   renderShop();
   $("screen-shop").classList.remove("hidden");
@@ -1418,7 +1473,7 @@ function updateHud() {
   if (player.hidden) { interactLabel.textContent = "EXIT"; btnInteract.classList.add("ready-glow"); }
   else if (nearbyContext) {
     btnInteract.classList.add("ready-glow");
-    if (nearbyContext.type === "page") interactLabel.textContent = level.stage === 2 ? "RUB" : "READ";
+    if (nearbyContext.type === "page") interactLabel.textContent = isS2() ? "RUB" : (isWoods() || isCourtyard()) ? "TAKE" : "READ";
     else if (nearbyContext.type === "merchant") interactLabel.textContent = "SHOP";
     else if (nearbyContext.type === "coffin") interactLabel.textContent = "REST";
     else if (nearbyContext.type === "bell") interactLabel.textContent = "RING";
@@ -1428,6 +1483,9 @@ function updateHud() {
     else if (nearbyContext.type === "door") interactLabel.textContent = player.keys[nearbyContext.obj.keyNo] === "held" ? "UNLOCK" : "LOCKED";
     else if (nearbyContext.type === "candle") interactLabel.textContent = "LIGHT";
     else if (nearbyContext.type === "plate") interactLabel.textContent = "PRESS";
+    else if (nearbyContext.type === "stone") interactLabel.textContent = "TOUCH";
+    else if (nearbyContext.type === "winch") interactLabel.textContent = "TURN";
+    else if (nearbyContext.type === "shield") interactLabel.textContent = "OATH";
     else if (nearbyContext.type === "exit") interactLabel.textContent = gateOpen() ? "ESCAPE" : "SEALED";
     else if (nearbyContext.type === "stair") interactLabel.textContent = nearbyContext.obj.dir === "up" ? (nearbyContext.obj.open ? "CLIMB" : "BARRED") : "DESCEND";
     else if (nearbyContext.type === "mirror") interactLabel.textContent = "TURN";
@@ -1451,8 +1509,12 @@ function updateHud() {
 }
 
 // ---------------------------------------------------------------- minimap
-const ROOM_COLORS = { ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44", candles: "#4a3a18", crush: "#4a1e2a",
-  gatehouse: "#3a3e48", mausoleum: "#34383a", cryptyard: "#3a3a40", orchard: "#2e3a2a", bonepit: "#4a4234", chapelyard: "#2c3a30", crypt: "#4a3a18", flood: "#1e3a44" };
+const ROOM_COLORS = {
+  timberroad: "#3a382c", wolfhollow: "#243426", hut: "#4a3826", crossroads: "#36382c", marsh: "#1e322e", hillgate: "#2c3a2e", stones: "#2e402c", snare: "#442c24",
+  postern: "#3a3c44", stables: "#463c2a", kennels: "#32343c", drillyard: "#383c46", barracks: "#343640", gatehouse: "#3a3e48", heraldry: "#463228", winch: "#2e3440",
+  ward: "#3b3540", chapel: "#38324a", kitchens: "#4a3a2a", hall: "#4a2a30", torture: "#4a1a20", north: "#3a3a44", candles: "#4a3a18", crush: "#4a1e2a",
+  mausoleum: "#34383a", cryptyard: "#3a3a40", orchard: "#2e3a2a", bonepit: "#4a4234", chapelyard: "#2c3a30", crypt: "#4a3a18", flood: "#1e3a44"
+};
 function buildMinimapBase() {
   const c = document.createElement("canvas");
   c.width = level.cols; c.height = level.rows;
@@ -1631,20 +1693,29 @@ function takeStair(s) {
 }
 function spawnBoss() {
   const sp = level.bossSpawn;
-  boss = new Monster("gargoyle", sp.x, sp.y);
+  if (!sp) return;
+  const bKind = level.bossKind || "gargoyle";
+  boss = new Monster(bKind, sp.x, sp.y);
   if (level.bossHp) boss.hp = level.bossHp;
   monsters.push(boss);
   fx.push({ type: "mist", x: sp.x, y: sp.y });
-  shake = Math.max(shake, 0.8);
-  sound.playScreech();
-  showBoon("curse", "THE TOWER GARGOYLE", "It unfolds from the battlements. Kill it to open the dawn stair.", 4);
+  if (bKind === "gargoyle") {
+    shake = Math.max(shake, 0.8);
+    sound.playScreech();
+    showBoon("curse", "THE TOWER GARGOYLE", "It unfolds from the battlements. Kill it to open the dawn stair.", 4);
+  }
 }
 function updateBossBar() {
   const bb = $("boss-bar");
   if (!bb) return;
-  const show = !!boss && !boss.dead && isS3() && curFloor === 6 && mode === "PLAYING";
+  const near = boss && player && (isS3() ? curFloor === 6 : (Math.hypot(boss.x - player.x, boss.y - player.y) < 420 || boss.state === "CHASE" || boss.hp < boss.maxHp));
+  const show = !!boss && !boss.dead && !!near && mode === "PLAYING";
   bb.classList.toggle("hidden", !show);
-  if (show) $("boss-fill").style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
+  if (show) {
+    const bn = $("boss-name");
+    if (bn) bn.textContent = boss.type.name.toUpperCase();
+    $("boss-fill").style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
+  }
 }
 
 // ---------------------------------------------------------------- spawning
@@ -1663,7 +1734,17 @@ function pickMonsterType() {
     for (const [k, p] of mix) { acc += p; if (r < acc) return k; }
     return mix[0][0];
   }
-  if (level && level.stage === 2) {
+  if (isWoods()) {
+    if (elapsed < 20) return "wolf";
+    if (elapsed < 60) return r < 0.5 ? "wolf" : r < 0.8 ? "wisp" : "stalker";
+    return r < 0.38 ? "wolf" : r < 0.68 ? "wisp" : "stalker";
+  }
+  if (isCourtyard()) {
+    if (elapsed < 20) return "hound";
+    if (elapsed < 60) return r < 0.5 ? "hound" : r < 0.8 ? "crows" : "sentry";
+    return r < 0.38 ? "hound" : r < 0.68 ? "crows" : "sentry";
+  }
+  if (isS2()) {
     if (elapsed < 20) return "skeleton";
     if (elapsed < 60) return r < 0.6 ? "skeleton" : r < 0.85 ? "banshee" : "brute";
     return r < 0.45 ? "skeleton" : r < 0.75 ? "banshee" : "brute";
@@ -1693,7 +1774,7 @@ function spawnMonster(type = pickMonsterType(), at = null, quiet = false) {
   const d = Math.hypot(sp.x - player.x, sp.y - player.y);
   if (d < TILE_SIZE * 20) sound.playSpawn();
   const room = roomAt(level, Math.floor(sp.x / TILE_SIZE), Math.floor(sp.y / TILE_SIZE));
-  const verb = type === "skeleton" ? (isS3() ? "steps out of the stacks" : "claws up out of the earth") : type === "wraith" ? "peels out of a portrait" : type === "prisoner" ? "drags his chain out of the dark" : type === "ironmaiden" ? "creaks open" : "rises";
+  const verb = type === "wolf" ? "prowls out of the pines" : type === "stalker" ? "unfolds from the deadwood" : type === "wisp" ? "drifts off the bog" : type === "hound" ? "breaks from the kennels" : type === "sentry" ? "marches off the wall" : type === "crows" ? "descends from the battlements" : type === "skeleton" ? (isS3() ? "steps out of the stacks" : "claws up out of the earth") : type === "wraith" ? "peels out of a portrait" : type === "prisoner" ? "drags his chain out of the dark" : type === "ironmaiden" ? "creaks open" : "rises";
   if (!quiet && d < TILE_SIZE * 22) toast(`${MONSTER_TYPES[type].name} ${verb}${room ? ` in the ${room.name}` : ""}…`, 2.2);
   return m;
 }
@@ -1808,6 +1889,10 @@ function updateSpawner(dt) {
 
 // ---------------------------------------------------------------- locked chambers (v0.5)
 const PUZZLE_REWARDS = {
+  stones: { tier: "gilded", coins: 25, text: "Gilded mirror · 25 coins · Sanity restored" },
+  snare: { tier: "obsidian", coins: 35, text: "Obsidian mirror · 35 coins · Full armor" },
+  heraldry: { tier: "gilded", coins: 30, text: "Gilded mirror · 30 coins · Sanity restored" },
+  winch: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" },
   candles: { tier: "gilded", coins: 30, text: "Gilded mirror · 30 coins · Sanity restored" },
   crush: { tier: "obsidian", coins: 40, text: "Obsidian mirror · 40 coins · Full armor" },
   crypt: { tier: "gilded", coins: 35, text: "Gilded mirror · 35 coins · Sanity restored" },
@@ -1816,7 +1901,7 @@ const PUZZLE_REWARDS = {
   clock: { tier: "obsidian", coins: 50, text: "Obsidian mirror · 50 coins · Full armor" }
 };
 const kindOf = (lr) => lr.kind || lr.key;
-const isOrderPuzzle = (lr) => kindOf(lr) === "candles" || kindOf(lr) === "crypt" || kindOf(lr) === "mirrors";
+const isOrderPuzzle = (lr) => ["stones", "heraldry", "candles", "crypt", "mirrors"].includes(kindOf(lr));
 
 function inRoomRect(r, x, y) {
   const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
@@ -1848,6 +1933,10 @@ function showRiddle(lr) {
   loreBody.textContent = lr.riddle.join("\n");
   loreBody.classList.add("riddle");
   lorePostscript.textContent = {
+    stones: "Four standing stones carved with forest beasts. Touch them from canopy to earth. A wrong stone wakes a Briar Wolf from the mist.",
+    snare: "Four compass winches hold the spiked timber jaws apart. Turn them in order before the jaws close.",
+    heraldry: "Four carved heraldry shields stand around the armory. Swear the oath in order — a wrong shield wakes an undead sentry.",
+    winch: "Four metal capstan wheels hold the iron portcullis aloft. Turn them from dullest to brightest metal before the grate drops.",
     candles: "Each candle has a carved sign on the floor before it. Light all six in the right order with your taper. A wrong flame snuffs them all.",
     crush: "Press the four glyph plates in the right order before the walls meet. A wrong plate resets them — and the walls lurch closer.",
     crypt: "Five coffins, each with a brass plaque. Tap REST at each to close its lid in the right order. A wrong lid wakes its sleeper — and every lid slides open again.",
@@ -1881,7 +1970,17 @@ function startPuzzle(lr) {
   monsters = monsters.filter((m) => !m.remove);
   projectiles = [];
   const k = kindOf(lr);
-  if (k === "candles") {
+  if (k === "stones") {
+    toast("The thorny brambles seal the clearing behind you. Four rune stones wait…", 3);
+  } else if (k === "snare") {
+    grindTimer = 0;
+    toast("The trap door drops — spiked timber jaws begin closing in!", 3);
+  } else if (k === "heraldry") {
+    toast("The armory gate clangs shut. Four shields line the wall…", 3);
+  } else if (k === "winch") {
+    grindTimer = 0;
+    toast("The winch room locks — the overhead iron portcullis begins to fall!", 3);
+  } else if (k === "candles") {
     player.hasTaper = true;
     toast("The door slams shut. A lit taper waits in your hand.", 3);
   } else if (k === "crypt") {
@@ -1907,7 +2006,39 @@ function failPuzzleStep(lr) {
   lr.progress = 0;
   shake = Math.max(shake, 0.8);
   const k = kindOf(lr);
-  if (k === "crypt") {
+  if (k === "stones") {
+    for (const it of lr.items) { it.lit = false; it.shake = 0.6; }
+    sound.playSnuff();
+    toast("Wrong stone! Every rune fades — and a Briar Wolf leaps from the brush!", 3);
+    const c = { x: (lr.room.x0 + lr.room.x1 + 1) / 2 * TILE_SIZE, y: (lr.room.y0 + lr.room.y1 + 1) / 2 * TILE_SIZE + TILE_SIZE };
+    const m = new Monster("wolf", c.x, c.y);
+    m.timer = 0.7;
+    m.hp = m.maxHp = 22;
+    monsters.push(m);
+    fx.push({ type: "mist", x: c.x, y: c.y });
+  } else if (k === "heraldry") {
+    for (const it of lr.items) it.lit = false;
+    sound.playSnuff();
+    toast("Wrong oath! Every flame dies — and a Sentry steps from the rack!", 3);
+    const c = { x: (lr.room.x0 + lr.room.x1 + 1) / 2 * TILE_SIZE, y: (lr.room.y0 + lr.room.y1 + 1) / 2 * TILE_SIZE + TILE_SIZE };
+    const m = new Monster("sentry", c.x, c.y);
+    m.timer = 0.8;
+    m.hp = m.maxHp = 26;
+    monsters.push(m);
+    fx.push({ type: "mist", x: c.x, y: c.y });
+  } else if (k === "winch") {
+    for (const it of lr.items) it.pressed = false;
+    lr.wallInset = Math.min(0.95, lr.wallInset + 0.14);
+    sound.playSnuff();
+    sound.playGrind();
+    toast("Wrong wheel! The chains slip — the portcullis drops closer!", 3);
+  } else if (k === "snare") {
+    for (const it of lr.items) it.pressed = false;
+    lr.wallInset = Math.min(crushMaxInset(lr), lr.wallInset + 14);
+    sound.playSnuff();
+    sound.playGrind();
+    toast("Wrong compass! The winches slip — the spiked jaws lurch inward!", 3);
+  } else if (k === "crypt") {
     for (const it of lr.items) { it.lit = false; it.shake = 0.6; }
     sound.playSnuff();
     sound.playCoffin(false);
@@ -2054,6 +2185,43 @@ function pullBook(it) {
   if (lr.progress >= lr.order.length) solvePuzzle(lr);
   else toast(`The book of the ${it.sym}th hour slides out. (${lr.progress}/${lr.order.length})`, 1.8);
 }
+function touchStone(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "stones" || it.lit) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 10, color: 0x6a9a7a }); failPuzzleStep(lr); return; }
+  it.lit = true;
+  lr.progress += 1;
+  sound.playCandle(true);
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.2, n: 12, color: 0x86ff98 });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} stone glows green. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+function touchShield(it) {
+  const lr = inPuzzle;
+  if (!lr || kindOf(lr) !== "heraldry" || it.lit) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 10, color: 0xc41230 }); failPuzzleStep(lr); return; }
+  it.lit = true;
+  lr.progress += 1;
+  sound.playCandle(true);
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.2, n: 12, color: 0xffd86a });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} shield catches flame. (${lr.progress}/${lr.order.length})`, 1.8);
+}
+function turnWinch(it) {
+  const lr = inPuzzle;
+  const k = lr && kindOf(lr);
+  if (!lr || (k !== "snare" && k !== "winch") || it.pressed) return;
+  const want = lr.order[lr.progress];
+  if (it.sym !== want) { fx.push({ type: "spark", x: it.x, y: it.y, n: 10, color: 0xc41230 }); failPuzzleStep(lr); return; }
+  it.pressed = true;
+  lr.progress += 1;
+  sound.playPlate();
+  fx.push({ type: "spark", x: it.x, y: it.y, h: 1.0, n: 12, color: 0xffc86a });
+  if (lr.progress >= lr.order.length) solvePuzzle(lr);
+  else toast(`The ${PUZZLE_GLYPHS[it.sym]} winch locks home. (${lr.progress}/${lr.order.length})`, 1.8);
+}
 
 function solvePuzzle(lr) {
   lr.solved = true;
@@ -2087,8 +2255,8 @@ function updatePuzzles(dt) {
       const ty = Math.floor(player.y / TILE_SIZE);
       if (inRoomRect(lr.room, player.x, player.y) && ty >= lr.room.y0 && player.y > lr.room.y0 * TILE_SIZE + player.radius + 2) startPuzzle(lr);
     }
-    if (lr.key === "crush" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 130 * dt);
-    if (kindOf(lr) === "flood" && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 0.5 * dt);
+    if ((lr.key === "crush" || kindOf(lr) === "snare") && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 130 * dt);
+    if ((kindOf(lr) === "flood" || kindOf(lr) === "winch") && lr.solved && lr.wallInset > 0) lr.wallInset = Math.max(0, lr.wallInset - 0.5 * dt);
   }
   const lr = inPuzzle;
   if (lr && kindOf(lr) === "clock") {
@@ -2114,7 +2282,17 @@ function updatePuzzles(dt) {
     }
     return;
   }
-  if (!lr || lr.key !== "crush") return;
+  if (lr && kindOf(lr) === "winch") {
+    lr.wallInset = Math.min(1, lr.wallInset + dt / lr.closeSecs);
+    grindTimer -= dt;
+    if (grindTimer <= 0) { grindTimer = 1.4; sound.playGrind(); }
+    if (lr.wallInset >= 0.95) {
+      shake = 1.0;
+      handleDeath("The iron portcullis slammed down across the winch room.");
+    }
+    return;
+  }
+  if (!lr || (lr.key !== "crush" && kindOf(lr) !== "snare")) return;
   const maxIn = crushMaxInset(lr);
   lr.wallInset = Math.min(maxIn, lr.wallInset + (maxIn / lr.closeSecs) * dt);
   grindTimer -= dt;
@@ -2126,7 +2304,7 @@ function updatePuzzles(dt) {
   for (const m of monsters) { if (!m.dead && inRoomRect(lr.room, m.x, m.y)) m.x = Math.max(L + m.radius, Math.min(R - m.radius, m.x)); }
   if (R - L < player.radius * 2 + 4) {
     shake = 1.2;
-    handleDeath("The Crushing Hall closed its stone hands around you.");
+    handleDeath(kindOf(lr) === "snare" ? "The Hunter's Trap closed its iron jaws around you." : "The Crushing Hall closed its stone hands around you.");
   }
 }
 
@@ -2156,6 +2334,19 @@ function updatePuzzleHud() {
     puzzleInfo.textContent = `Coffins at rest ${lr.progress} / ${lr.order.length}`;
     puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
     puzzleHud.classList.remove("urgent");
+  } else if (kindOf(lr) === "stones") {
+    puzzleInfo.textContent = `Stones lit ${lr.progress} / ${lr.order.length}`;
+    puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
+    puzzleHud.classList.remove("urgent");
+  } else if (kindOf(lr) === "heraldry") {
+    puzzleInfo.textContent = `Shields lit ${lr.progress} / ${lr.order.length}`;
+    puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
+    puzzleHud.classList.remove("urgent");
+  } else if (kindOf(lr) === "winch") {
+    const secs = Math.max(0, (0.95 - lr.wallInset) * lr.closeSecs);
+    puzzleInfo.textContent = `Winches ${lr.progress} / ${lr.order.length} · portcullis drops in ${Math.ceil(secs)}s`;
+    puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset / 0.95) * 100}%`;
+    puzzleHud.classList.toggle("urgent", secs < 10);
   } else if (kindOf(lr) === "flood") {
     const secs = floodSecondsLeft(lr);
     puzzleInfo.textContent = `Bells ${lr.progress} / ${lr.order.length} · water at ${Math.round(lr.wallInset * 100)}% · ${Math.ceil(secs)}s`;
@@ -2164,9 +2355,10 @@ function updatePuzzleHud() {
   } else if (lr.key === "candles") {
     puzzleInfo.textContent = `Candles lit ${lr.progress} / ${lr.order.length}`;
     puzzleFill.style.width = `${(lr.progress / lr.order.length) * 100}%`;
+    puzzleHud.classList.remove("urgent");
   } else {
     const secs = crushSecondsLeft(lr);
-    puzzleInfo.textContent = `Plates ${lr.progress} / ${lr.order.length} · walls meet in ${Math.ceil(secs)}s`;
+    puzzleInfo.textContent = `${kindOf(lr) === "snare" ? "Winches" : "Plates"} ${lr.progress} / ${lr.order.length} · jaws close in ${Math.ceil(secs)}s`;
     puzzleFill.style.width = `${Math.max(0, 1 - lr.wallInset / crushMaxInset(lr)) * 100}%`;
     puzzleHud.classList.toggle("urgent", secs < 10);
   }
@@ -2198,6 +2390,14 @@ function damagePlayer(amount, fromX, fromY, reason) {
 }
 
 const DEATH_BY = {
+  wolf: "A Briar Wolf pulled you down into the pine needles.",
+  stalker: "The Thorn Stalker dragged you off the timber road.",
+  wisp: "The Marsh Wisp drank your oil and left you in the bog.",
+  packmaster: "The Old Packmaster tore out your throat beneath the Hillfoot Postern.",
+  hound: "The Castle Hounds ran you down in the cobbles.",
+  sentry: "A Corrupted Sentry's halberd pinned you to the bailey wall.",
+  crows: "The Carrion Crows tore out your lantern and took your eyes.",
+  warden: "The Gate Warden's great-axe felled you before the Castle Doors.",
   ghoul: "The castle's ghouls dragged you down into the straw.",
   maiden: "A Blood Maiden's nails found your throat.",
   bats: "The bat swarm tore at you until the lantern fell.",
@@ -2366,6 +2566,15 @@ function update(dt) {
       } else if (kindOf(inPuzzle) === "flood") {
         nearbyContext = { type: "bell", obj: best };
         promptText = `Tap RING — the ${name} bell (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (kindOf(inPuzzle) === "stones") {
+        nearbyContext = { type: "stone", obj: best };
+        promptText = `Tap TOUCH — the ${name} stone (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (kindOf(inPuzzle) === "heraldry") {
+        nearbyContext = { type: "shield", obj: best };
+        promptText = `Tap OATH — the ${name} shield (${inPuzzle.progress}/${inPuzzle.order.length})`;
+      } else if (kindOf(inPuzzle) === "snare" || kindOf(inPuzzle) === "winch") {
+        nearbyContext = { type: "winch", obj: best };
+        promptText = `Tap TURN — the ${name} winch (${inPuzzle.progress}/${inPuzzle.order.length})`;
       } else if (inPuzzle.key === "candles") {
         nearbyContext = { type: "candle", obj: best };
         promptText = `Tap LIGHT — candle marked ${name} (${inPuzzle.progress}/${inPuzzle.order.length} lit)`;
@@ -2404,7 +2613,7 @@ function update(dt) {
   for (const p of level.pages) {
     if (!p.collected && Math.hypot(p.x - player.x, p.y - player.y) < 34) {
       nearbyContext = { type: "page", obj: p };
-      promptText = level.stage === 2 ? `Tap RUB — ${p.lore.num}` : `Tap READ — ${p.lore.num}`;
+      promptText = isS2() ? `Tap RUB — ${p.lore.num}` : (isWoods() || isCourtyard()) ? `Tap TAKE — ${p.lore.num}` : `Tap READ — ${p.lore.num}`;
       break;
     }
   }
@@ -2412,7 +2621,7 @@ function update(dt) {
     for (const a of level.alcoves) {
       if (Math.hypot(a.x - player.x, a.y - player.y) < 32) {
         nearbyContext = { type: "alcove", obj: a };
-        promptText = level.stage === 2 ? "Tap HIDE — Crypt Niche" : "Tap HIDE — Iron Alcove";
+        promptText = isWoods() ? "Tap HIDE — Hunter Blind" : isCourtyard() ? "Tap HIDE — Sentry Box" : isS2() ? "Tap HIDE — Crypt Niche" : "Tap HIDE — Iron Alcove";
         break;
       }
     }
@@ -2434,17 +2643,20 @@ function update(dt) {
   }
   if (!nearbyContext && Math.hypot(level.exitTile.x - player.x, level.exitTile.y - player.y) < 60) {
     nearbyContext = { type: "exit", obj: level.exitTile };
-    promptText = gateOpen()
-      ? (isS3() ? "The Dawn Stair Is Open — Tap ESCAPE!" : level.stage === 2 ? "Gatehouse Open — Tap ESCAPE!" : "Portcullis Unsealed — Tap ESCAPE!")
-      : isS3() ? (player.pagesFound < 5 ? `Dawn Stair Sealed (${player.pagesFound}/5 Tower Seals)` : "Dawn Stair Sealed — the Gargoyle still guards the roof")
-      : (level.stage === 2 ? `Gatehouse Sealed (${player.pagesFound}/5 Grave Rubbings)` : `North Gate Sealed (${player.pagesFound}/5 Ledger Pages)`);
+    if (gateOpen()) {
+      promptText = isWoods() ? "Hillfoot Postern Open — Tap ESCAPE!" : isCourtyard() ? "Castle Doors Open — Tap ESCAPE!" : isS3() ? "The Dawn Stair Is Open — Tap ESCAPE!" : isS2() ? "Gatehouse Open — Tap ESCAPE!" : "Portcullis Unsealed — Tap ESCAPE!";
+    } else if (player.pagesFound < 5) {
+      promptText = `${isWoods() ? "Postern" : isCourtyard() ? "Castle Doors" : isS2() ? "Gatehouse" : isS3() ? "Dawn Stair" : "North Gate"} Sealed (${player.pagesFound}/5 ${level.collect})`;
+    } else {
+      promptText = `Gate Sealed — defeat ${boss ? boss.type.name : "the guardian"}`;
+    }
   }
   if (!nearbyContext && !player.hidden && level.merchant && Math.hypot(level.merchant.x - player.x, level.merchant.y - player.y) < 62) {
     nearbyContext = { type: "merchant", obj: level.merchant };
     promptText = `Tap SHOP — The Hooded Pedlar (◉${player.coins | 0})`;
   }
-  if (player.hidden) promptText = level.stage === 2 ? "Hidden in a Crypt Niche — Tap EXIT to step out" : "Hidden in Iron Alcove — Tap EXIT to step out";
-  else if (!promptText && player.inBrazier) promptText = "Warm Brazier — Mending Oil, Sanity & Wounds";
+  if (player.hidden) promptText = isWoods() ? "Hidden in a Hunter Blind — Tap EXIT to step out" : isCourtyard() ? "Hidden in a Sentry Box — Tap EXIT to step out" : isS2() ? "Hidden in a Crypt Niche — Tap EXIT to step out" : "Hidden in Iron Alcove — Tap EXIT to step out";
+  else if (!promptText && player.inBrazier) promptText = isWoods() ? "Warm Campfire — Mending Oil, Sanity & Wounds" : "Warm Brazier — Mending Oil, Sanity & Wounds";
   if (promptText) { promptBanner.textContent = promptText; promptBanner.classList.remove("hidden"); }
   else promptBanner.classList.add("hidden");
 
@@ -2612,7 +2824,7 @@ function update(dt) {
     if (d < 140) monsterDanger = Math.max(monsterDanger, 0.35 * (1 - d / 140));
   }
   danger = Math.max(danger, monsterDanger, (1 - player.health / player.maxHealth) * 0.4);
-  if (player.sanity <= 0) { handleDeath(isS3() ? "Your mind came apart somewhere on the tower stairs." : level.stage === 2 ? "Your mind came apart in the graveyard fog." : "Your mind fractured inside the dark stones of Csejte."); return; }
+  if (player.sanity <= 0) { handleDeath(isWoods() ? "Your mind unraveled in the dark Carpathian pines." : isCourtyard() ? "Your mind gave way beneath the outer battlements." : isS3() ? "Your mind came apart somewhere on the tower stairs." : isS2() ? "Your mind came apart in the graveyard fog." : "Your mind fractured inside the dark stones of Csejte."); return; }
 
   dangerVignette.style.opacity = (danger * 0.85).toFixed(2);
   const lowSanity = Math.max(0, (38 - player.sanity) / 38);
@@ -2709,28 +2921,28 @@ if (new URLSearchParams(location.search).has("qa")) {
     pickWeapon(id) { closeTokenPicker(); swapWeapon(id); },
     hurt(n) { player.invuln = 0; damagePlayer(n, player.x, player.y + 10, "QA"); return [player.health, player.armor]; },
     newRun: () => startNewRun(1),
-    // ---- v0.6
-    startStage(n = 2, carryCoins = null) {
-      if (n >= 2) { stage2Unlocked = true; lsSet(LS_S2, true); }
-      if (n === 3) { stage3Unlocked = true; lsSet(LS_S3, true); }
+    // ---- v0.6 / v0.8
+    startStage(n = 1, carryCoins = null) {
+      unlockUpTo(n);
       startNewRun(n);
       if (carryCoins !== null) { player.coins = carryCoins; runStartCoins = carryCoins; }
       return level.stage;
     },
     get stage() { return currentStage; },
+    get maxUnlocked() { return maxUnlocked; },
     renderer: renderer3d,
     get upgrades() { return { ...upgrades }; },
     get purse() { return loadPurse(); },
     set purse(v) { savePurse(v); },
-    get stage2Unlocked() { return stage2Unlocked; },
-    resetProgress() { upgrades = { heart: 0, edge: 0, wick: 0, glass: 0 }; lsSet(LS_UP, upgrades); savePurse(0); stage2Unlocked = false; lsSet(LS_S2, false); stage3Unlocked = false; lsSet(LS_S3, false); refreshTitleStages(); },
+    get stage2Unlocked() { return maxUnlocked >= 2; },
+    resetProgress() { upgrades = { heart: 0, edge: 0, wick: 0, glass: 0 }; lsSet(LS_UP, upgrades); savePurse(0); maxUnlocked = 1; lsSet(LS_UNLOCKED, 1); lsSet(LS_S2, false); lsSet(LS_S3, false); lsSet(LS_VER, 8); refreshTitleStages(); },
     setCoins(n) { player.coins = n; if (hudCoinVal) hudCoinVal.textContent = String(n); },
     openShop: (ctx = "field") => openShop(ctx),
     closeShop: () => closeShop(),
     shopSelect(key) { const el = document.querySelector(`#screen-shop [data-key="${key}"]`); if (el) el.click(); return shopSel; },
     shopConfirm() { $("btn-shop-buy").click(); return $("shop-feedback").textContent; },
     get shopFeedback() { return $("shop-feedback").textContent; },
-    clearStage() { if (mode !== "PLAYING") mode = "PLAYING"; player.pagesFound = 5; handleWin(); return mode; },
+    clearStage() { if (mode !== "PLAYING") mode = "PLAYING"; player.pagesFound = 5; if (level) level.bossDead = true; handleWin(); return mode; },
     enterStage2: () => enterStage2(),
     get graves() { return level.graves; },
     get maxHealth() { return player.maxHealth; },
@@ -2738,7 +2950,13 @@ if (new URLSearchParams(location.search).has("qa")) {
       const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym);
       if (!it) return -1;
       const k = kindOf(inPuzzle);
-      if (k === "crypt") restCoffin(it); else if (k === "flood") ringBell(it); else if (k === "candles") lightCandle(it); else pressPlate(it);
+      if (k === "stones") touchStone(it);
+      else if (k === "heraldry") touchShield(it);
+      else if (k === "snare" || k === "winch") turnWinch(it);
+      else if (k === "crypt") restCoffin(it);
+      else if (k === "flood") ringBell(it);
+      else if (k === "candles") lightCandle(it);
+      else pressPlate(it);
       return inPuzzle ? inPuzzle.progress : 99;
     },
     set waterLevel(v) { if (inPuzzle) inPuzzle.wallInset = v; },
@@ -2755,7 +2973,7 @@ if (new URLSearchParams(location.search).has("qa")) {
     set countessAway(v) { countessAway = v; },
     get boss() { return boss; },
     get bossDead() { return !!level.bossDead; },
-    get stage3Unlocked() { return stage3Unlocked; },
+    get stage3Unlocked() { return maxUnlocked >= 5; },
     gateOpen: () => gateOpen(),
     takeStair(floor, dir) { const st = level.stairs.find((q) => q.floor === floor && q.dir === dir); stairCd = 0; return takeStair(st) ? curFloor : -1; },
     // jump to a floor (QA): stands you at that floor's down-stair arrival (or the start for Floor I)
@@ -2772,7 +2990,7 @@ if (new URLSearchParams(location.search).has("qa")) {
     pullBook(sym) { const it = inPuzzle && inPuzzle.items.find((q) => q.sym === sym); if (it) pullBook(it); return inPuzzle ? inPuzzle.progress : 99; },
     set clockLevel(v) { if (inPuzzle) inPuzzle.wallInset = v; },
     traceBeam() { const lr = level.lockedRooms.find((q) => q.kind === "mirrors"); return lr ? traceBeam(lr) : null; },
-    enterStage3() { carryOver = carryOver || { next: 3, weapon: player.weapon, ammo: player.ammo, mirrors: { ...player.mirrors }, armor: player.armor, coins: player.coins, speedBoost: 0 }; enterStage2(); return level.stage; },
+    enterStage3() { carryOver = carryOver || { next: 5, weapon: player.weapon, ammo: player.ammo, mirrors: { ...player.mirrors }, armor: player.armor, coins: player.coins, speedBoost: 0 }; enterStage2(); return level.stage; },
     setQuality(q) { quality.set(q); return quality.label(); },
     get quality() { return { setting: quality.setting, level: quality.level, label: quality.label(), fps: quality.fps }; },
     cycleQuality() { quality.cycle(); return quality.label(); }
@@ -2791,17 +3009,12 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
-// ?qa&stage=2 — jump straight into the Graveyards (QA only).
+// ?qa&stage=N (1..5) — jump straight into any stage (QA only).
 {
   const qs = new URLSearchParams(location.search);
-  if (qs.has("qa") && qs.get("stage") === "3") {
-    stage2Unlocked = true; stage3Unlocked = true;
-    lsSet(LS_S2, true); lsSet(LS_S3, true);
-    setTimeout(() => { pendingStage = 3; startNewRun(3); }, 50);
-  }
-  if (qs.has("qa") && qs.get("stage") === "2") {
-    stage2Unlocked = true;
-    lsSet(LS_S2, true);
-    setTimeout(() => { pendingStage = 2; startNewRun(2); }, 50);
+  const st = Number(qs.get("stage"));
+  if (qs.has("qa") && st >= 1 && st <= 5) {
+    unlockUpTo(st);
+    setTimeout(() => { pendingStage = st; startNewRun(st); }, 50);
   }
 }

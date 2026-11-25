@@ -1,4 +1,4 @@
-const CACHE_NAME = "csejte-blood-ledger-v7-climb";
+const CACHE_NAME = "csejte-blood-ledger-v8-woods";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,8 +7,11 @@ const ASSETS = [
   "./js/audio.js",
   "./js/lore.js",
   "./js/map.js",
+  "./js/stage_woods.js",
+  "./js/stage_courtyard.js",
   "./js/stage2.js",
   "./js/stage3.js",
+  "./js/render_woods_courtyard.js",
   "./js/render_stage3.js",
   "./js/render3d.js",
   "./js/textures.js",
